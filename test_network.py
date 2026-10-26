@@ -1,74 +1,90 @@
 import unittest
-from unittest.mock import patch, MagicMock
-from network import diagnose, host_profile, route_kind, own_address
+from unittest.mock import MagicMock, patch
+
+from network import _router_url, diagnose, host_profile, is_public_ipv4, own_address
+
 
 class NetworkTests(unittest.TestCase):
-    def test_direct_after_relay(self):
-        self.assertEqual(route_kind('pong via DERP(fra) in 80ms\npong via 1.2.3.4:4321 in 12ms'), 'direct')
+    def test_public_address_classification(self):
+        self.assertTrue(is_public_ipv4('8.8.8.8'))
+        for value in ('100.64.1.2', '192.168.1.2', '127.0.0.1', '2001:db8::1', 'bad'):
+            self.assertFalse(is_public_ipv4(value))
 
-    def test_relay_and_unknown(self):
-        self.assertEqual(route_kind('pong via DERP(fra) in 80ms'), 'relay')
-        self.assertEqual(route_kind('no direct connection'), 'unknown')
-        self.assertEqual(route_kind('pong via [2001:db8::1]:456 in 20ms'), 'direct')
-
-    def test_read_only_default(self):
-        p = host_profile()
-        for key in ('keyboard','mouse','controller','native_pen_touch'):
-            self.assertIn(key+' = disabled', p)
-        self.assertIn('GLOBAL', p)
-
-    def test_gamepad_only(self):
-        p = host_profile(controller=True)
-        self.assertIn('controller = enabled', p)
-        self.assertIn('keyboard = disabled', p)
-        self.assertIn('mouse = disabled', p)
+    def test_router_url_rejects_external_and_credentials(self):
+        for value in ('https://192.168.1.1/desc.xml',
+                      'http://8.8.8.8/desc.xml',
+                      'http://user:pass@192.168.1.1/desc.xml',
+                      'http://localhost/desc.xml'):
+            with self.assertRaises(ValueError):
+                _router_url(value)
 
     @patch('network.socket.create_connection')
-    @patch('network.find_tailscale', return_value=None)
-    def test_missing_dependency(self, find, connect):
-        connect.return_value = MagicMock()
-        result = diagnose('100.64.1.2')
-        self.assertIn('Tailscale не найден', result)
-        self.assertIn('НЕ проверка видеопотока', result)
-        connect.assert_called_once_with(('100.64.1.2', 47989), timeout=4)
+    def test_direct_diagnosis_checks_sunshine_ports(self, connect):
+        connect.return_value.__enter__ = MagicMock()
+        result = diagnose('8.8.8.8')
+        for port in (47984, 47989, 48010):
+            connect.assert_any_call(('8.8.8.8', port), timeout=3)
+        self.assertIn('UDP', result)
+        self.assertIn('не проверяет', result)
 
     @patch('network.socket.create_connection', side_effect=OSError('unreachable'))
-    @patch('network.run_cli', return_value='not JSON')
-    @patch('network.find_tailscale', return_value='tailscale')
-    def test_diagnostic_errors(self, find, run, connect):
+    def test_diagnosis_errors_and_private_address(self, connect):
         result = diagnose('100.64.1.2')
-        self.assertIn('Ошибка диагностики', result)
+        self.assertIn('не публичный', result)
         self.assertIn('недоступен', result)
 
-    @patch('network.find_tailscale')
-    def test_no_command_for_invalid_host(self, find):
+    @patch('network.socket.create_connection')
+    def test_invalid_host_does_not_connect(self, connect):
         with self.assertRaises(ValueError):
             diagnose('--help')
-        find.assert_not_called()
+        connect.assert_not_called()
 
-class OwnAddressTests(unittest.TestCase):
-    @patch('network.run_cli', return_value='{"BackendState":"Running","TailscaleIPs":["fd7a:115c:a1e0::1","100.80.1.2"]}')
-    @patch('network.find_tailscale', return_value='tailscale')
-    def test_own_ipv4_preferred(self, find, run):
-        self.assertEqual(own_address(), '100.80.1.2')
-        run.assert_called_once_with('tailscale', ['status', '--json'])
+    @patch('network._discover_router', return_value='http://192.168.1.1/desc.xml')
+    @patch('network.urllib.request.build_opener')
+    def test_own_address_from_router_only(self, build_opener, discover):
+        description = (b'<root><service><serviceType>'
+                       b'urn:schemas-upnp-org:service:WANIPConnection:1'
+                       b'</serviceType><controlURL>/control</controlURL></service></root>')
+        response = b'<r><NewExternalIPAddress>8.8.8.8</NewExternalIPAddress></r>'
+        contexts = []
+        for url, payload in [('http://192.168.1.1/desc.xml', description),
+                             ('http://192.168.1.1/control', response)]:
+            value = MagicMock()
+            value.geturl.return_value = url
+            value.read.return_value = payload
+            context = MagicMock()
+            context.__enter__.return_value = value
+            contexts.append(context)
+        build_opener.return_value.open.side_effect = contexts
+        self.assertEqual(own_address(), '8.8.8.8')
+        self.assertEqual(build_opener.return_value.open.call_count, 2)
 
-    @patch('network.run_cli', return_value='{"BackendState":"Stopped","TailscaleIPs":["100.80.1.2"]}')
-    @patch('network.find_tailscale', return_value='tailscale')
-    def test_stopped_does_not_show_old_ip(self, find, run):
-        with self.assertRaises(ValueError):
+    @patch('network._discover_router', return_value='http://192.168.1.1/desc.xml')
+    @patch('network.urllib.request.build_opener')
+    def test_cgnat_address_rejected(self, build_opener, discover):
+        description = (b'<root><service><serviceType>'
+                       b'urn:schemas-upnp-org:service:WANIPConnection:1'
+                       b'</serviceType><controlURL>/control</controlURL></service></root>')
+        response = b'<r><NewExternalIPAddress>100.64.1.2</NewExternalIPAddress></r>'
+        contexts = []
+        for url, payload in [('http://192.168.1.1/desc.xml', description),
+                             ('http://192.168.1.1/control', response)]:
+            value = MagicMock()
+            value.geturl.return_value = url
+            value.read.return_value = payload
+            context = MagicMock()
+            context.__enter__.return_value = value
+            contexts.append(context)
+        build_opener.return_value.open.side_effect = contexts
+        with self.assertRaisesRegex(ValueError, 'CGNAT'):
             own_address()
 
-    @patch('network.run_cli', return_value='{"BackendState":"Running","TailscaleIPs":["192.168.1.2","bad"],"Peer":{"ip":"100.80.1.3"}}')
-    @patch('network.find_tailscale', return_value='tailscale')
-    def test_no_lan_or_peer_fallback(self, find, run):
-        with self.assertRaises(ValueError):
-            own_address()
+    def test_host_profile_remains_read_only(self):
+        profile = host_profile()
+        self.assertIn('keyboard = disabled', profile)
+        self.assertIn('GLOBAL', profile)
+        self.assertIn('controller = enabled', host_profile(controller=True))
 
-    @patch('network.find_tailscale', return_value=None)
-    def test_missing(self, find):
-        with self.assertRaisesRegex(ValueError, 'Установи'):
-            own_address()
 
 if __name__ == '__main__':
     unittest.main()

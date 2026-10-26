@@ -1,4 +1,4 @@
-"""PulsePlay 0.6 — desktop launcher for separately installed Moonlight/Sunshine."""
+"""PulsePlay 0.7 — desktop launcher for separately installed Moonlight/Sunshine."""
 import os
 from pathlib import Path
 import queue
@@ -58,7 +58,7 @@ class App(tk.Tk):
             button=tk.Button(sidebar,text=label,anchor='w',bg='#111724',fg='#96a6c1',activebackground='#25352d',activeforeground='#a3edba',relief='flat',bd=0,font=('Segoe UI',10),padx=18,pady=14,cursor='hand2',command=lambda i=index:self.navigate(i))
             button.pack(fill='x',padx=12,pady=3)
             self.nav_buttons.append(button)
-        tk.Label(sidebar,text='АЛЬФА  /  0.6\nSunshine + Moonlight',justify='left',bg='#111724',fg='#71809a',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
+        tk.Label(sidebar,text='АЛЬФА  /  0.7\nSunshine + Moonlight',justify='left',bg='#111724',fg='#71809a',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
         viewport = tk.Canvas(self, bg='#0c101b', highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient='vertical', command=viewport.yview)
         scrollbar.pack(side='right', fill='y')
@@ -150,8 +150,9 @@ class App(tk.Tk):
                  '    Для NVIDIA проверь аппаратный кодировщик NVENC.\n\n'
                  '3. На втором устройстве нажми «Сопряжение». Введи показанный\n'
                  '    PIN в разделе PIN панели Sunshine на игровом ПК.\n\n'
-                 '4. Для интернета сначала настрой доступную частную сеть/VPN.\n'
-                 '    В этой версии нет сервера приглашений и обхода NAT.\n\n'
+                 '4. Для интернета включи UPnP в Sunshine и в роутере.\n'
+                 '    Если UPnP недоступен, открой порты вручную (вкладка «Интернет»).\n'
+                 '    При CGNAT нужен публичный IP от провайдера.\n\n'
                  'Доступ сохраняется после сопряжения. Удаляй ненужные устройства\n'
                  'в Sunshine. Для прекращения всех подключений останови Sunshine\n'
                  'на игровом ПК. Закрытие PulsePlay на хосте поток не останавливает.')
@@ -170,7 +171,7 @@ class App(tk.Tk):
 
         if not self.vars['moonlight'].get():
             self.advanced.grid()
-        self.write('PulsePlay 0.6 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
+        self.write('PulsePlay 0.7 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
         self.after(100,self.poll)
         self.after(200,self.refresh_address)
         self.protocol('WM_DELETE_WINDOW',self.close)
@@ -244,7 +245,7 @@ class App(tk.Tk):
         self.own_ip.set('')
         self.copy_ip_button.configure(state='disabled')
         self.refresh_ip_button.configure(state='disabled')
-        self.address_status.set('Получаю IP этого компьютера из Tailscale…')
+        self.address_status.set('Запрашиваю публичный IPv4 у домашнего роутера…')
         def worker():
             try:
                 self.events.put(('own_ip', (own_address(), None)))
@@ -259,26 +260,30 @@ class App(tk.Tk):
         try:
             self.clipboard_clear()
             self.clipboard_append(address)
-            self.address_status.set('IP скопирован — отправь другу. Ему также нужен доступ к ПК через Tailscale и PIN Sunshine.')
+            self.address_status.set('IP скопирован. Отправь его доверенному человеку; для подключения нужны открытые порты и PIN Sunshine.')
         except tk.TclError:
             self.address_status.set('Не удалось скопировать. Выдели адрес в поле и нажми Ctrl+C.')
 
     def setup_internet(self, frame):
-        text = ('Проверка игры через интернет\n\n'
-                '1. Установи Tailscale на игровой и принимающий ПК.\n'
-                '2. Для своих устройств войди в один аккаунт. Для друга используй\n'
-                '    Share игрового ПК в Tailscale, а не передачу своего пароля.\n'
-                '3. На вкладке «Подключиться» введи Tailscale IP игрового ПК.\n'
-                '4. Проверь маршрут, затем выполни сопряжение и запусти игру.\n\n'
-                'Прямой маршрут предпочтителен для низкой задержки. Если видишь\n'
-                'DERP/relay, быстрый поток пока не подтверждён.\n'
-                'Проверка TCP не подтверждает работоспособность видео и управления.\n\n'
-                'Share даёт сетевой доступ к ПК согласно правилам Tailscale,\n'
-                'а не только к игре. Права ввода задаются отдельно в Sunshine.')
+        text = ('Прямое подключение через интернет — без VPN и сервера PulsePlay\n\n'
+                '1. На игровом ПК запусти Sunshine. В его панели открой Network\n'
+                '    и включи UPnP. На домашнем роутере тоже должен работать UPnP.\n'
+                '2. Нажми «Обновить» в карточке IP. Если показан публичный адрес,\n'
+                '    скопируй его и передай доверенному человеку.\n'
+                '3. На втором ПК, в другой сети, введи этот IP в «Подключиться»,\n'
+                '    нажми «Проверить», затем выполни сопряжение по PIN и играй.\n\n'
+                'Если UPnP не работает, направь на игровой ПК порты вручную:\n'
+                'TCP 47984, 47989, 48010; UDP 47998, 47999, 48000, 48002, 48010.\n'
+                'Закрепи локальный IP игрового ПК в DHCP роутера.\n'
+                'Если WAN IP роутера непубличный (CGNAT/двойной NAT), попроси\n'
+                'публичный IPv4 у провайдера. Без него этот прямой способ не работает.\n\n'
+                'Не открывай веб-панель Sunshine (TCP 47990) в интернет.\n'
+                'Проверка TCP не проверяет UDP и видеопоток; проверяй из другой сети.\n'
+                'После теста отключи UPnP или убери правила роутера, если доступ\n'
+                'больше не нужен. Удаляй ненужные сопряжённые клиенты в Sunshine.')
         help_label(frame, 'Подключение через интернет', 'network').pack(anchor='w',pady=(0,12))
         ttk.Label(frame, text=text, wraplength=720, justify='left').pack(anchor='w')
-        ttk.Button(frame, text='Установить Tailscale', command=lambda: webbrowser.open('https://tailscale.com/download/windows')).pack(anchor='w', pady=8)
-        ttk.Button(frame, text='Устройства / Share / отзыв доступа', command=lambda: webbrowser.open('https://login.tailscale.com/admin/machines')).pack(anchor='w', pady=4)
+        ttk.Button(frame, text='Настройки Sunshine на этом ПК', command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w', pady=8)
         self.diagnostic_button = ttk.Button(frame, text='Проверить указанный игровой ПК', command=self.check_network)
         self.diagnostic_button.pack(anchor='w', pady=8)
 
@@ -289,7 +294,7 @@ class App(tk.Tk):
             messagebox.showerror('Адрес ПК', str(exc))
             return
         self.diagnostic_button.configure(state='disabled')
-        self.write('Проверяю маршрут и TCP 47989; это может занять около 30 секунд…')
+        self.write('Проверяю TCP-порты Sunshine; это может занять до 10 секунд…')
         def worker():
             try:
                 result = diagnose(host)
@@ -413,7 +418,7 @@ class App(tk.Tk):
                 self.refresh_ip_button.configure(state='normal')
                 self.own_ip.set(address)
                 self.copy_ip_button.configure(state='normal' if address else 'disabled')
-                self.address_status.set(error or 'На игровом ПК скопируй этот IP и отправь другу. Один IP не выдаёт доступ: нужны Tailscale и PIN.')
+                self.address_status.set(error or 'На игровом ПК скопируй IP. Для подключения нужны открытые порты и PIN Sunshine.')
             elif kind=='diagnostic':
                 self.show_log()
                 self.write(value)
