@@ -171,6 +171,18 @@ class App(tk.Tk):
         ttk.Label(host, text='Название приложения в Sunshine (обычно Desktop)').pack(anchor='w')
         self.host_app = tk.StringVar(value='Desktop')
         ttk.Entry(host, textvariable=self.host_app, width=38).pack(anchor='w', pady=6)
+        ttk.Label(host, text='Как гость подключится', font=('Segoe UI',12,'bold')).pack(anchor='w', pady=(12,6))
+        self.invite_route = tk.StringVar(value='direct')
+        ttk.Radiobutton(host, text='Напрямую: публичный IP роутера',
+                        variable=self.invite_route, value='direct').pack(anchor='w')
+        ttk.Radiobutton(host, text='Через Radmin VPN: адрес хоста из Radmin VPN',
+                        variable=self.invite_route, value='radmin').pack(anchor='w')
+        ttk.Label(host, text='Для Radmin VPN установи программу на оба ПК, создай сеть и пригласи гостя.\n'
+                  'Скопируй адрес своего ПК из окна Radmin VPN и вставь ниже.').pack(anchor='w', pady=(6,2))
+        self.radmin_ip = tk.StringVar(value='')
+        ttk.Entry(host, textvariable=self.radmin_ip, width=38).pack(anchor='w', pady=4)
+        ttk.Button(host, text='Открыть сайт Radmin VPN',
+                   command=lambda: webbrowser.open('https://www.radmin-vpn.com/')).pack(anchor='w', pady=4)
         ttk.Button(host, text='Скопировать приглашение для гостя',
                    command=self.copy_invite).pack(anchor='w', pady=6)
         ttk.Label(host, text='Приглашение содержит адрес и название приложения. Это не пароль.\n'
@@ -248,7 +260,15 @@ class App(tk.Tk):
 
     def copy_invite(self):
         try:
-            invite = make_invite(self.own_ip.get(), self.host_app.get())
+            if self.invite_route.get() == 'radmin':
+                address = self.radmin_ip.get()
+                if not address.strip():
+                    raise ValueError('Введи VPN-адрес своего ПК из окна Radmin VPN.')
+            else:
+                address = self.own_ip.get()
+                if not address:
+                    raise ValueError('Сначала получи публичный IPv4 роутера кнопкой «Обновить».')
+            invite = make_invite(address, self.host_app.get())
             self.clipboard_clear()
             self.clipboard_append(invite)
             self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
