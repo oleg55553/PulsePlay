@@ -347,6 +347,13 @@ class App(tk.Tk):
                    command=self.copy_provider_request).pack(anchor='w', pady=4)
         self.diagnostic_button = ttk.Button(frame, text='Проверить указанный игровой ПК', command=self.check_network)
         self.diagnostic_button.pack(anchor='w', pady=8)
+        ttk.Label(frame, text='Звук игры передаёт Sunshine вместе с изображением.',
+                  font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(16, 4))
+        ttk.Label(frame, text='Если у гостя нет звука: в Sunshine → Audio/Video проверь '
+                  '«Stream Audio» (включено), на хосте выбери работающий аудиовыход, '
+                  'а на ПК гостя проверь громкость Moonlight и устройство вывода Windows. '
+                  'При необходимости укажи Audio Sink в Sunshine.',
+                  wraplength=720, justify='left').pack(anchor='w')
 
     def copy_provider_request(self):
         request = ('Здравствуйте! У меня домашний интернет Ростелекома. Для прямого '
