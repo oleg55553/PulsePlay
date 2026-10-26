@@ -1,9 +1,19 @@
 import tempfile
 from pathlib import Path
 import unittest
-from core import load_settings, save_settings, stream_args, validate_host
+from core import load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
 
 class CoreTests(unittest.TestCase):
+    def test_invitation_roundtrip(self):
+        invite = make_invite('8.8.8.8', 'Игра & друзья')
+        self.assertEqual(parse_invite(invite), ('8.8.8.8', 'Игра & друзья'))
+        self.assertNotIn('8.8.8.8', invite)
+
+    def test_invalid_invitation(self):
+        for value in ('', 'PP1:!!', 'PP1:W10', 'https://example.com'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse_invite(value)
+
     def args(self, **changes):
         params=dict(host='192.168.1.10', app='My Game', resolution='1920x1080',fps='120',bitrate='35',codec='auto',low_latency=True,overlay=True)
         params.update(changes)

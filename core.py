@@ -1,4 +1,5 @@
 """Validated Moonlight CLI integration. No transport proxy, shell or credentials."""
+import base64
 import ipaddress
 import json
 import os
@@ -26,6 +27,35 @@ def validate_host(value):
                for x in value.split('.')):
         raise ValueError('Нужен IP или DNS-адрес без http://, порта и пробелов.')
     return value
+
+
+def make_invite(host, app='Desktop'):
+    """Portable address card, not a password or access grant."""
+    host = validate_host(host)
+    app = app.strip()
+    if not app or app.startswith('-') or len(app) > 128 or any(ord(c) < 32 for c in app):
+        raise ValueError('Укажи название приложения Sunshine.')
+    payload = json.dumps({'host': host, 'app': app}, ensure_ascii=False, separators=(',', ':'))
+    return 'PP1:' + base64.urlsafe_b64encode(payload.encode('utf-8')).decode('ascii').rstrip('=')
+
+
+def parse_invite(value):
+    value = value.strip()
+    if not value.startswith('PP1:') or len(value) > 1024:
+        raise ValueError('Неверное приглашение PulsePlay.')
+    token = value[4:]
+    try:
+        data = json.loads(base64.b64decode(
+            token + '=' * (-len(token) % 4), altchars=b'-_', validate=True))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError('Приглашение повреждено.') from exc
+    if not isinstance(data, dict) or not isinstance(data.get('host'), str) or not isinstance(data.get('app'), str):
+        raise ValueError('Приглашение повреждено.')
+    host = validate_host(data['host'])
+    app = data['app'].strip()
+    if not app or app.startswith('-') or len(app) > 128 or any(ord(c) < 32 for c in app):
+        raise ValueError('Приглашение содержит неверное приложение.')
+    return host, app
 
 def stream_args(host, app, resolution, fps, bitrate, codec, low_latency, overlay, fullscreen=True):
     host = validate_host(host)

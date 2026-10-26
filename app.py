@@ -1,4 +1,4 @@
-"""PulsePlay 0.7 — desktop launcher for separately installed Moonlight/Sunshine."""
+"""PulsePlay 0.8 — desktop launcher for separately installed Moonlight/Sunshine."""
 import os
 from pathlib import Path
 import queue
@@ -11,7 +11,7 @@ import webbrowser
 
 from help_ui import help_label
 from network import diagnose, host_profile, own_address
-from core import PRESETS, find_moonlight, load_settings, save_settings, stream_args, validate_host
+from core import PRESETS, find_moonlight, load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
 
 class App(tk.Tk):
     def __init__(self):
@@ -58,7 +58,7 @@ class App(tk.Tk):
             button=tk.Button(sidebar,text=label,anchor='w',bg='#111724',fg='#96a6c1',activebackground='#25352d',activeforeground='#a3edba',relief='flat',bd=0,font=('Segoe UI',10),padx=18,pady=14,cursor='hand2',command=lambda i=index:self.navigate(i))
             button.pack(fill='x',padx=12,pady=3)
             self.nav_buttons.append(button)
-        tk.Label(sidebar,text='АЛЬФА  /  0.7\nSunshine + Moonlight',justify='left',bg='#111724',fg='#71809a',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
+        tk.Label(sidebar,text='АЛЬФА  /  0.8\nSunshine + Moonlight',justify='left',bg='#111724',fg='#71809a',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
         viewport = tk.Canvas(self, bg='#0c101b', highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient='vertical', command=viewport.yview)
         scrollbar.pack(side='right', fill='y')
@@ -103,6 +103,8 @@ class App(tk.Tk):
         self.field(client, 'host', 'Адрес игрового ПК', self.settings.get('host', ''), 1)
         ttk.Button(client, text='Вставить IP', command=self.paste_host).grid(row=1, column=2, padx=(8,0))
         self.field(client, 'app', 'Игра в Sunshine', self.settings.get('app', 'Desktop'), 2)
+        ttk.Button(client, text='Вставить приглашение от хоста', command=self.paste_invite).grid(
+            row=8, column=0, columnspan=3, sticky='w', pady=8)
         help_label(client, 'Профиль', 'preset').grid(row=3, column=0, sticky='w', pady=7)
         preset = ttk.Combobox(client, values=list(PRESETS), state='readonly')
         preset.set('Мои настройки' if self.settings.get('resolution') else 'Баланс • 1080p / 60')
@@ -157,6 +159,23 @@ class App(tk.Tk):
                  'в Sunshine. Для прекращения всех подключений останови Sunshine\n'
                  'на игровом ПК. Закрытие PulsePlay на хосте поток не останавливает.')
         ttk.Label(host,text=steps,justify='left',wraplength=720).pack(anchor='w')
+        ttk.Label(host, text='Что увидит гость', font=('Segoe UI',12,'bold')).pack(anchor='w', pady=(18,6))
+        self.host_scope = tk.StringVar(value='desktop')
+        ttk.Radiobutton(host, text='Весь экран компьютера', variable=self.host_scope,
+                        value='desktop').pack(anchor='w')
+        ttk.Radiobutton(host, text='Только выбранное окно — пока недоступно',
+                        variable=self.host_scope, value='window', state='disabled').pack(anchor='w')
+        ttk.Label(host, text='Sunshine передаёт дисплей целиком даже при запуске одной игры.\n'
+                  'Для скрытия остальных окон нужен отдельный механизм захвата.',
+                  foreground='#e6bd8a', wraplength=720).pack(anchor='w', pady=(4,12))
+        ttk.Label(host, text='Название приложения в Sunshine (обычно Desktop)').pack(anchor='w')
+        self.host_app = tk.StringVar(value='Desktop')
+        ttk.Entry(host, textvariable=self.host_app, width=38).pack(anchor='w', pady=6)
+        ttk.Button(host, text='Скопировать приглашение для гостя',
+                   command=self.copy_invite).pack(anchor='w', pady=6)
+        ttk.Label(host, text='Приглашение содержит адрес и название приложения. Это не пароль.\n'
+                  'Гость вставляет его на вкладке «Подключиться», затем проходит PIN-сопряжение.',
+                  wraplength=720).pack(anchor='w', pady=(0,10))
         ttk.Button(host,text='Открыть панель Sunshine на этом ПК',command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w',pady=15)
         links=ttk.Frame(host)
         links.pack(anchor='w')
@@ -171,7 +190,7 @@ class App(tk.Tk):
 
         if not self.vars['moonlight'].get():
             self.advanced.grid()
-        self.write('PulsePlay 0.7 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
+        self.write('PulsePlay 0.8 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
         self.after(100,self.poll)
         self.after(200,self.refresh_address)
         self.protocol('WM_DELETE_WINDOW',self.close)
@@ -217,6 +236,24 @@ class App(tk.Tk):
             self.vars['host'].set(address)
         except (tk.TclError, ValueError):
             messagebox.showerror('Вставить IP', 'Скопируй только IP или имя игрового ПК, без другого текста.')
+
+    def paste_invite(self):
+        try:
+            host, app = parse_invite(self.clipboard_get())
+            self.vars['host'].set(host)
+            self.vars['app'].set(app)
+            self.status.set('Приглашение вставлено • нажми «Сопряжение · PIN», затем «Играть»')
+        except (tk.TclError, ValueError) as exc:
+            messagebox.showerror('Приглашение', str(exc))
+
+    def copy_invite(self):
+        try:
+            invite = make_invite(self.own_ip.get(), self.host_app.get())
+            self.clipboard_clear()
+            self.clipboard_append(invite)
+            self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showerror('Приглашение', str(exc) or 'Сначала получи публичный IP роутера.')
 
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
