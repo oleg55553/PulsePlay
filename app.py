@@ -321,8 +321,29 @@ class App(tk.Tk):
         help_label(frame, 'Подключение через интернет', 'network').pack(anchor='w',pady=(0,12))
         ttk.Label(frame, text=text, wraplength=720, justify='left').pack(anchor='w')
         ttk.Button(frame, text='Настройки Sunshine на этом ПК', command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w', pady=8)
+        ttk.Label(frame, text='Если провайдер — Ростелеком и нет публичного IP:',
+                  foreground='#e6bd8a').pack(anchor='w', pady=(16,4))
+        ttk.Button(frame, text='Скопировать запрос в Ростелеком',
+                   command=self.copy_provider_request).pack(anchor='w', pady=4)
         self.diagnostic_button = ttk.Button(frame, text='Проверить указанный игровой ПК', command=self.check_network)
         self.diagnostic_button.pack(anchor='w', pady=8)
+
+    def copy_provider_request(self):
+        request = ('Здравствуйте! У меня домашний интернет Ростелекома. Для прямого '
+                   'подключения к моему игровому ПК из другой сети нужен публичный '
+                   'IPv4-адрес без CGNAT и возможность входящих TCP/UDP-соединений. '
+                   'Есть ли такая услуга по моему адресу (например, «Фиксированный IP»)? '
+                   'Сколько стоит подключение и ежемесячная плата? '
+                   'Будет ли публичный адрес назначен моему роутеру и смогу ли я '
+                   'настроить проброс портов или UPnP?')
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(request)
+            self.show_log()
+            self.write('Запрос Ростелекому скопирован. Отправь его через официальный '
+                       'личный кабинет или задай оператору по телефону.')
+        except tk.TclError:
+            messagebox.showerror('Буфер обмена', 'Не удалось скопировать запрос.')
 
     def check_network(self):
         try:
