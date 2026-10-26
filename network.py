@@ -106,10 +106,11 @@ def own_address():
 
 def diagnose(host):
     host = validate_host(host)
-    lines = [f'Прямое подключение к {host} (без VPN и ретранслятора).']
+    lines = [f'Проверка доступности Sunshine по адресу {host}.']
     try:
         if not ipaddress.ip_address(host).is_global:
-            lines.append('Этот IP не публичный. Для интернета нужен публичный IP или DNS-имя хоста.')
+            lines.append('Этот IP не публичный. Он может работать внутри домашней сети '
+                         'или VPN, если оба ПК подключены к одной сети.')
     except ValueError:
         pass
     for port in TCP_PORTS:
@@ -120,8 +121,9 @@ def diagnose(host):
             lines.append(f'TCP {port}: недоступен ({str(exc)[:120]}).')
     lines.append('UDP ' + ', '.join(map(str, UDP_PORTS)) + ' этой проверкой не проверяется. '
                  'Доступность TCP не подтверждает видео, звук или ввод.')
-    lines.append('Проверяй с другой сети: локальная проверка публичного IP может не работать '
-                 'из-за отсутствия NAT loopback. Затем выполни сопряжение и запуск Moonlight.')
+    lines.append('Для прямого подключения проверяй с другой сети: локальная проверка '
+                 'публичного IP может не работать без NAT loopback. Для VPN сначала '
+                 'подключи оба ПК к одной виртуальной сети. Затем выполни сопряжение и запуск Moonlight.')
     return '\n'.join(lines)
 
 
