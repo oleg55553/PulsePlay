@@ -137,6 +137,7 @@ class App(tk.Tk):
         self.process = None
         self.process_kind = ''
         self.stopping = False
+        self.pairing_context = None
         self.settings = load_settings()
         style = ttk.Style(self)
         style.theme_use('clam')
@@ -431,7 +432,7 @@ class App(tk.Tk):
         help_label(row, '', key).pack(side='left')
         return row
 
-    def show_pairing_help(self):
+    def show_pairing_help(self, parent=None):
         messagebox.showinfo(
             'Куда вводить PIN',
             'PIN вводится на ИГРОВОМ компьютере (хосте), где запущен Sunshine.\n\n'
@@ -440,43 +441,125 @@ class App(tk.Tk):
             '3. В меню Sunshine открой PIN и введи код, показанный в окне Moonlight.\n'
             '4. Подтверди сопряжение. После этого вернись к гостю и нажми «Играть».\n\n'
             'Не вводи этот PIN в PulsePlay или в поле адреса. Если игровой ПК другой, '
-            'адрес localhost нужно открыть именно на игровом ПК.'
+            'адрес localhost нужно открыть именно на игровом ПК.',
+            parent=parent or self,
         )
 
     def show_pairing_window(self, host, pin):
         """Keep the Moonlight pairing code visible and ready to paste."""
+        clipboard_status = 'PIN скопирован автоматически.'
         try:
             copy_text_to_clipboard(self, pin)
         except tk.TclError:
-            pass
+            clipboard_status = 'Нажми «Скопировать PIN». '
         dialog = tk.Toplevel(self)
         dialog.title('Подтверждение подключения')
-        dialog.geometry('560x360')
+        dialog.geometry('620x440')
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.configure(bg='#0c101b')
         body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
         body.pack(fill='both', expand=True)
-        ttk.Label(body, text='Передай этот код на игровой компьютер',
-                  font=('Segoe UI', 17, 'bold')).pack(anchor='w')
-        ttk.Label(body, text=f'Подключение к: {host}', foreground='#96a6c1').pack(anchor='w', pady=(6, 12))
-        ttk.Label(body, text=pin, font=('Consolas', 38, 'bold'), foreground='#a3edba').pack(pady=6)
-        ttk.Label(body, text='Код уже скопирован. На игровом ПК открой Sunshine → PIN и вставь его.\n'
-                  'Если хост находится в другом городе, отправь код хозяину через личный чат/звонок.\n'
-                  'Для безопасности PulsePlay не вводит код удалённо в панель Sunshine.',
-                  wraplength=500, justify='left').pack(anchor='w', pady=(4, 14))
+        ttk.Label(body, text='Подключение: код действует до 20 минут',
+                  font=('Segoe UI', 16, 'bold')).pack(anchor='w')
+        ttk.Label(body, text=f'Игровой компьютер: {host}', foreground='#96a6c1').pack(anchor='w', pady=(6, 8))
+        code = tk.Entry(body, justify='center', font=('Consolas', 40, 'bold'),
+                        readonlybackground='#111724', foreground='#a3edba', relief='flat')
+        code.insert(0, pin)
+        code.configure(state='readonly')
+        code.pack(fill='x', pady=(4, 8), ipady=6)
+        countdown = tk.StringVar(value='Осталось 20:00')
+        ttk.Label(body, textvariable=countdown, font=('Segoe UI', 11, 'bold'),
+                  foreground='#a3edba').pack(anchor='center', pady=(0, 10))
+        ttk.Label(body, text=clipboard_status + 'На игровом ПК открой Sunshine → PIN и вставь код.\n'
+                  'Если вы в разных городах — отправь PIN хозяину в чат или продиктуй по звонку.\n'
+                  'Оставь это окно открытым: PulsePlay будет обновлять запрос, сохраняя тот же PIN.',
+                  wraplength=550, justify='left').pack(anchor='w', pady=(0, 12))
         buttons = ttk.Frame(body)
         buttons.pack(fill='x', side='bottom')
         first_row = ttk.Frame(buttons)
         first_row.pack(fill='x', pady=(0, 8))
-        ttk.Button(first_row, text='Скопировать код', command=lambda: self.copy_pairing_pin(pin)).pack(side='left')
-        ttk.Button(first_row, text='Куда вводить?', command=self.show_pairing_help).pack(side='left', padx=8)
-        ttk.Button(buttons, text='Открыть Sunshine на этом ПК (только если это хост)',
+        copy_button = ttk.Button(first_row, text='Скопировать PIN', style='Accent.TButton',
+                                 command=lambda: self.copy_pairing_pin(pin))
+        copy_button.pack(side='left')
+        ttk.Button(first_row, text='Показать инструкцию',
+                   command=lambda: self.show_pairing_help(dialog)).pack(side='left', padx=8)
+        ttk.Button(buttons, text='Открыть Sunshine (если это игровой ПК)',
                    command=lambda: webbrowser.open('https://localhost:47990')).pack(side='left')
-        ttk.Button(buttons, text='Закрыть', command=dialog.destroy).pack(side='right')
-        dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
+        cancel_button = ttk.Button(buttons, text='Отменить сопряжение',
+                                   command=lambda: self.cancel_pairing(dialog))
+        cancel_button.pack(side='right')
+        dialog.protocol('WM_DELETE_WINDOW', lambda: self.cancel_pairing(dialog))
+        dialog.bind('<Escape>', lambda _event: self.cancel_pairing(dialog))
         dialog.grab_set()
-        dialog.focus_set()
+        copy_button.focus_set()
+        if self.pairing_context:
+            self.pairing_context.update(dialog=dialog, countdown=countdown, cancel_button=cancel_button)
+            self.update_pairing_countdown()
+        return dialog
+
+    def update_pairing_countdown(self):
+        context = self.pairing_context
+        if not context or not context.get('dialog') or not context['dialog'].winfo_exists():
+            return
+        remaining = max(0, int(context['deadline'] - time.monotonic()))
+        context['countdown'].set(f'Осталось {remaining // 60:02d}:{remaining % 60:02d}')
+        if remaining:
+            self.after(1000, self.update_pairing_countdown)
+        else:
+            context['countdown'].set('Время истекло. Создай новый PIN кнопкой «Сопряжение · PIN».')
+            context['cancel_button'].configure(text='Закрыть', command=context['dialog'].destroy)
+            self.pairing_context = None
+            self.pair_button.configure(state='normal')
+            if self.process is None:
+                self.play_button.configure(state='normal')
+            if self.process is not None and self.process_kind == 'сопряжение':
+                self.stop()
+
+    def cancel_pairing(self, dialog=None):
+        context, self.pairing_context = self.pairing_context, None
+        if self.process is not None and self.process_kind == 'сопряжение':
+            self.stop()
+        dialog = (context or {}).get('dialog') or dialog
+        if dialog and dialog.winfo_exists():
+            dialog.grab_release()
+            dialog.destroy()
+        if self.process is None:
+            self.pair_button.configure(state='normal')
+            self.play_button.configure(state='normal')
+
+    def retry_pairing(self):
+        context = self.pairing_context
+        if not context or time.monotonic() >= context['deadline']:
+            return
+        if self.process is None:
+            try:
+                context['attempt'] += 1
+                self.launch(['pair', context['host'], '--pin', context['pin']], 'сопряжение')
+                self.status.set(f'Ожидаю подтверждение на игровом ПК • попытка {context["attempt"]}')
+            except (ValueError, OSError) as exc:
+                self.write('Не удалось повторить сопряжение: ' + str(exc))
+                self.after(3000, self.retry_pairing)
+
+    def finish_pairing(self, result):
+        context = self.pairing_context
+        if not context:
+            return
+        dialog = context.get('dialog')
+        if result == 0:
+            self.pairing_context = None
+            self.status.set('Сопряжение подтверждено • теперь нажми «Играть»')
+            if dialog and dialog.winfo_exists():
+                context['countdown'].set('Готово! Хост подтвердил подключение. Теперь нажми «Играть».')
+                context['cancel_button'].configure(text='Закрыть', command=dialog.destroy)
+        elif time.monotonic() < context['deadline']:
+            self.play_button.configure(state='disabled')
+            self.pair_button.configure(state='disabled')
+            self.stop_button.configure(state='disabled')
+            if dialog and dialog.winfo_exists():
+                context['countdown'].set('Запрос обновляется автоматически • тот же PIN остаётся на экране')
+            self.status.set('Жду ввод PIN на игровом ПК • PulsePlay повторяет запрос')
+            self.after(1500, self.retry_pairing)
 
     def copy_pairing_pin(self, pin):
         try:
@@ -772,13 +855,22 @@ class App(tk.Tk):
 
     def pair(self):
         try:
+            if self.pairing_context:
+                dialog = self.pairing_context.get('dialog')
+                if dialog and dialog.winfo_exists():
+                    dialog.lift()
+                return
             host=validate_host(self.vars['host'].get())
             pin=f'{secrets.randbelow(10000):04d}'
+            self.pairing_context = {
+                'host': host, 'pin': pin, 'deadline': time.monotonic() + 20 * 60,
+                'attempt': 1, 'dialog': None,
+            }
             self.launch(['pair',host,'--pin',pin],'сопряжение')
-            self.show_log()
-            self.write('PIN: '+pin+' — введи его в панели Sunshine → PIN на игровом ПК.')
+            self.status.set('Ожидаю подтверждение PIN на игровом компьютере')
             self.show_pairing_window(host, pin)
         except (ValueError,OSError) as exc:
+            self.pairing_context = None
             messagebox.showerror('Сопряжение',str(exc))
 
     def play(self):
@@ -816,8 +908,10 @@ class App(tk.Tk):
                 self.write(value)
                 self.diagnostic_button.configure(state='normal')
             elif kind=='log':
-                self.write(value)
+                if self.process_kind != 'сопряжение':
+                    self.write(value)
             else:
+                finished_kind = self.process_kind
                 label='Действие отменено' if self.stopping else ('Moonlight завершён' if value==0 else 'Ошибка Moonlight')
                 self.status.set(f'{label} • код {value}')
                 if value != 0 and not self.stopping:
@@ -827,6 +921,8 @@ class App(tk.Tk):
                 self.play_button.configure(state='normal')
                 self.pair_button.configure(state='normal')
                 self.stop_button.configure(state='disabled')
+                if finished_kind == 'сопряжение' and self.pairing_context:
+                    self.finish_pairing(value)
         self.after(100,self.poll)
 
     def close(self):
