@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.14 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.14'
+"""PulsePlay 0.8.15 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.15'
 import os
 import ctypes
 from pathlib import Path
@@ -450,17 +450,52 @@ class App(tk.Tk):
         return row
 
     def show_pairing_help(self, parent=None):
-        messagebox.showinfo(
-            'Куда вводить PIN',
-            'PIN вводится на ИГРОВОМ компьютере (хосте), где запущен Sunshine.\n\n'
-            '1. Оставь открытым окно Moonlight/PulsePlay на компьютере гостя.\n'
-            '2. На игровом ПК открой панель Sunshine: https://localhost:47990\n'
-            '3. В меню Sunshine открой PIN и введи код, показанный в окне Moonlight.\n'
-            '4. Подтверди сопряжение. После этого вернись к гостю и нажми «Играть».\n\n'
-            'Не вводи этот PIN в PulsePlay или в поле адреса. Если игровой ПК другой, '
-            'адрес localhost нужно открыть именно на игровом ПК.',
-            parent=parent or self,
+        dialog = tk.Toplevel(parent or self)
+        dialog.title('Инструкция для хоста — Sunshine → PIN')
+        dialog.geometry('680x520')
+        dialog.minsize(600, 460)
+        dialog.transient(parent or self)
+        dialog.configure(bg='#0b1020')
+
+        body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='Как подтвердить гостя в Sunshine',
+                  font=('Segoe UI', 19, 'bold')).pack(anchor='w')
+        ttk.Label(body,
+                  text='Эта инструкция для игрового компьютера (хоста), где открыта панель Sunshine. '
+                       'Сам интерфейс Sunshine пока показывает эти подписи на английском.',
+                  wraplength=620, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 14))
+
+        translations = (
+            ('PIN Pairing', 'Сопряжение по PIN — нужная вкладка.'),
+            ('No devices are waiting to pair', 'Нет устройств, ожидающих сопряжения. Запрос от гостя ещё не пришёл.'),
+            ('PIN', 'Код, который PulsePlay показала на компьютере гостя.'),
+            ('Device Name', 'Название гостевого устройства, например PulsePlay Guest.'),
+            ('Send', 'Отправить код и подтвердить сопряжение.'),
         )
+        for english, russian in translations:
+            row = ttk.Frame(body, style='Page.TFrame')
+            row.pack(fill='x', pady=3)
+            ttk.Label(row, text=english, width=31, foreground='#83e4b1',
+                      font=('Segoe UI', 10, 'bold')).pack(side='left', anchor='nw')
+            ttk.Label(row, text=russian, wraplength=390, justify='left').pack(side='left', fill='x', expand=True)
+
+        ttk.Label(body,
+                  text='Порядок действий: на гостевом ПК нажми «Сопряжение · PIN» и оставь PulsePlay открытой. '
+                       'Когда имя гостя появится в списке Sunshine, выбери его, введи гостевой PIN и нажми Send. '
+                       'После подтверждения гость нажимает «Играть».',
+                  wraplength=620, justify='left').pack(anchor='w', pady=(14, 8))
+        ttk.Label(body,
+                  text='Если список пуст, как на скриншоте, PIN пока вводить некуда: запрос ещё не дошёл '
+                       'до хоста. Проверь, что гость нажал сопряжение и подключается к правильному адресу хоста.',
+                  wraplength=620, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+
+        buttons = ttk.Frame(body, style='Page.TFrame')
+        buttons.pack(fill='x', side='bottom')
+        ttk.Button(buttons, text='Открыть Sunshine на этом ПК',
+                   command=lambda: webbrowser.open('https://localhost:47990')).pack(side='left')
+        ttk.Button(buttons, text='Понятно', style='Accent.TButton',
+                   command=dialog.destroy).pack(side='right')
 
     def setup_pairing_card(self, parent):
         """Create a persistent PIN card in the main PulsePlay screen."""
