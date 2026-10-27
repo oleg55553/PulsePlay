@@ -12,7 +12,7 @@ import webbrowser
 
 from help_ui import help_label
 from network import diagnose, host_profile, own_address
-from core import PRESETS, find_moonlight, load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
+from core import PRESETS, find_moonlight, find_sunshine, load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
 
 class App(tk.Tk):
     def __init__(self):
@@ -96,7 +96,10 @@ class App(tk.Tk):
         advanced = ttk.Frame(client)
         advanced.grid(row=10, column=0, columnspan=3, sticky='ew', pady=8)
         advanced.columnconfigure(1, weight=1)
-        self.field(advanced, 'moonlight', 'Moonlight.exe', self.settings.get('moonlight') or find_moonlight(), 0)
+        moonlight_path = self.settings.get('moonlight', '')
+        if not Path(moonlight_path).is_file():
+            moonlight_path = find_moonlight()
+        self.field(advanced, 'moonlight', 'Moonlight.exe', moonlight_path, 0)
         ttk.Button(advanced, text='Выбрать…', command=self.select_exe).grid(row=0, column=2, padx=(8,0))
         self.advanced = advanced
         advanced.grid_remove()
@@ -241,9 +244,7 @@ class App(tk.Tk):
         ttk.Label(body, textvariable=status, wraplength=590, justify='left').pack(anchor='w', pady=14)
 
         def locate_sunshine():
-            candidates = [Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Sunshine' / 'sunshine.exe',
-                          Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Sunshine' / 'sunshine.exe']
-            return next((str(path) for path in candidates if path.is_file()), shutil.which('sunshine') or '')
+            return find_sunshine()
 
         def refresh():
             found = locate_sunshine() if role.get() == 'host' else find_moonlight()
