@@ -251,10 +251,22 @@ class App(tk.Tk):
         self.help_check(advanced, 'Статистика поверх игры', 'overlay', self.overlay).grid(row=3,column=0,columnspan=3,sticky='w',pady=4)
         self.fullscreen = tk.BooleanVar(value=self.settings.get('fullscreen', True) is True)
         self.help_check(client, 'Открывать игру на весь экран', 'fullscreen', self.fullscreen).grid(row=4, column=0, columnspan=3, sticky='w', pady=8)
-        ttk.Label(client, text='В игре: Ctrl+Alt+Shift+X — полный экран / окно\nCtrl+Alt+Shift+Q — отключиться, оставив игру запущенной', foreground='#9daac2').grid(row=5, column=0, columnspan=3, sticky='w', pady=6)
-        help_label(client, 'Как подключиться впервые', 'connect').grid(row=6,column=0,columnspan=3,sticky='w',pady=6)
+        volume_frame = ttk.Frame(client)
+        volume_frame.grid(row=5, column=0, columnspan=3, sticky='ew', pady=(5, 2))
+        volume_frame.columnconfigure(1, weight=1)
+        help_label(volume_frame, 'Громкость у гостя', 'volume').grid(row=0, column=0, sticky='w', padx=(0, 14))
+        self.volume = tk.IntVar(value=max(0, min(100, int(self.settings.get('volume', 100)))))
+        self.volume_value = tk.StringVar(value=f'{self.volume.get()}%')
+        self.volume_scale = ttk.Scale(volume_frame, from_=0, to=100, variable=self.volume,
+                                      command=self.update_volume_label)
+        self.volume_scale.grid(row=0, column=1, sticky='ew')
+        ttk.Label(volume_frame, textvariable=self.volume_value, width=5, anchor='e').grid(row=0, column=2, padx=(8, 0))
+        ttk.Label(client, text='Громкость меняется сразу и затрагивает только звук Moonlight на этом компьютере.',
+                  foreground='#9daac2').grid(row=6, column=0, columnspan=3, sticky='w', pady=(0, 2))
+        ttk.Label(client, text='В игре: Ctrl+Alt+Shift+X — полный экран / окно\nCtrl+Alt+Shift+Q — отключиться, оставив игру запущенной', foreground='#9daac2').grid(row=7, column=0, columnspan=3, sticky='w', pady=6)
+        help_label(client, 'Как подключиться впервые', 'connect').grid(row=8,column=0,columnspan=3,sticky='w',pady=6)
         buttons = ttk.Frame(client)
-        buttons.grid(row=7,column=0,columnspan=3,sticky='ew',pady=(14,0))
+        buttons.grid(row=9,column=0,columnspan=3,sticky='ew',pady=(14,0))
         self.pair_button = ttk.Button(buttons, text='Сопряжение · PIN', command=self.pair)
         self.pair_button.pack(side='left')
         ttk.Button(buttons, text='Куда вводить PIN?', command=self.show_pairing_help).pack(side='left', padx=(8, 0))
@@ -546,10 +558,32 @@ class App(tk.Tk):
 
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
-        values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get())
+        values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get(), volume=self.volume.get())
         values['setup_wizard_completed'] = bool(self.settings.get('setup_wizard_completed'))
         self.settings.update(values)
         save_settings(values)
+
+    def update_volume_label(self, value):
+        volume = max(0, min(100, int(float(value))))
+        self.volume.set(volume)
+        self.volume_value.set(f'{volume}%')
+        if hasattr(self, '_volume_apply_job'):
+            self.after_cancel(self._volume_apply_job)
+        self._volume_apply_job = self.after(150, self.apply_guest_volume)
+
+    def apply_guest_volume(self):
+        self._volume_apply_job = None
+        if self.process is None or self.process_kind != 'игровой сеанс' or self.process.poll() is not None:
+            return
+        try:
+            from audio_control import set_process_volume
+            if set_process_volume(self.process.pid, self.volume.get()):
+                self.status.set(f'Громкость Moonlight: {self.volume.get()}%')
+            else:
+                # Windows creates the audio session after the stream starts.
+                self._volume_apply_job = self.after(700, self.apply_guest_volume)
+        except Exception as exc:
+            self.status.set('Не удалось изменить громкость Moonlight: ' + str(exc))
 
     def setup_address(self, parent):
         card = ttk.Frame(parent,padding=18)
@@ -751,6 +785,7 @@ class App(tk.Tk):
         try:
             values={key:self.vars[key].get() for key in ('host','app','resolution','fps','bitrate','codec')}
             self.launch(stream_args(**values,low_latency=self.low_latency.get(),overlay=self.overlay.get(),fullscreen=self.fullscreen.get()),'игровой сеанс')
+            self.apply_guest_volume()
         except (ValueError,OSError) as exc:
             messagebox.showerror('Запуск',str(exc))
 

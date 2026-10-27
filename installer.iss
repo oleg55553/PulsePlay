@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.5"
+#define AppVersion "0.8.6"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 
@@ -52,4 +52,4 @@ Name: "{group}\PulsePlay"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\PulsePlay"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Запустить PulsePlay"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Запустить PulsePlay"; Flags: nowait postinstall skipifsilent\n
