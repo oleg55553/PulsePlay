@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import queue
 import secrets
+import shutil
 import subprocess
 import threading
 import tkinter as tk
@@ -205,7 +206,94 @@ class App(tk.Tk):
         self.write('PulsePlay 0.8 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
         self.after(100,self.poll)
         self.after(200,self.refresh_address)
+        self.after(500,self.maybe_setup_wizard)
         self.protocol('WM_DELETE_WINDOW',self.close)
+
+    def maybe_setup_wizard(self):
+        if not self.settings.get('setup_wizard_completed'):
+            self.show_setup_wizard()
+
+    def show_setup_wizard(self):
+        dialog = tk.Toplevel(self)
+        dialog.title('Первый запуск PulsePlay')
+        dialog.geometry('690x600')
+        dialog.minsize(600, 480)
+        dialog.transient(self)
+        dialog.configure(bg='#0c101b')
+        body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='Подготовим подключение', font=('Segoe UI', 20, 'bold'),
+                  style='TLabel').pack(anchor='w', pady=(0, 8))
+        ttk.Label(body, text='PulsePlay — оболочка управления подключением. Нужны Sunshine '
+                  'на игровом ПК и Moonlight на ПК гостя. Выбери роль для этого компьютера, '
+                  'затем нажми установку. Для хоста и гостя понадобится настроить оба ПК.',
+                  wraplength=620, justify='left').pack(anchor='w', pady=(0, 14))
+
+        role = tk.StringVar(value='guest')
+        ttk.Label(body, text='Какую роль выполняет этот компьютер?',
+                  font=('Segoe UI', 12, 'bold')).pack(anchor='w', pady=(0, 4))
+        ttk.Radiobutton(body, text='Хост — на этом ПК запускается игра (Sunshine)',
+                        variable=role, value='host').pack(anchor='w', pady=3)
+        ttk.Radiobutton(body, text='Гость — с этого ПК играют удалённо (Moonlight)',
+                        variable=role, value='guest').pack(anchor='w', pady=3)
+
+        status = tk.StringVar()
+        ttk.Label(body, textvariable=status, wraplength=590, justify='left').pack(anchor='w', pady=14)
+
+        def locate_sunshine():
+            candidates = [Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Sunshine' / 'sunshine.exe',
+                          Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Sunshine' / 'sunshine.exe']
+            return next((str(path) for path in candidates if path.is_file()), shutil.which('sunshine') or '')
+
+        def refresh():
+            found = locate_sunshine() if role.get() == 'host' else find_moonlight()
+            requirement = 'Sunshine' if role.get() == 'host' else 'Moonlight'
+            status.set(f'{requirement}: ' + ('установлена.' if found else 'пока не найдена.') +
+                       ('\nWinget: доступен.' if shutil.which('winget') else '\nWinget: не найден. Установи «Установщик приложений» из Microsoft Store.') +
+                       '\n\nПри установке Winget может показать условия пакета и запрос UAC Windows. '
+                       'Проверь название пакета в открывшемся окне перед продолжением.')
+            install_button.configure(state='disabled' if found else 'normal',
+                                     text='Уже установлено' if found else f'Установить {requirement}')
+            host_help.pack_forget()
+            if role.get() == 'host':
+                host_help.pack(anchor='w', pady=(6, 0))
+
+        def install():
+            if not shutil.which('winget'):
+                webbrowser.open('https://apps.microsoft.com/detail/9nblggh4nns1')
+                status.set('Открыл страницу Microsoft Store для Установщика приложений. '
+                           'Установи его, закрой это окно и нажми «Проверить ещё раз».')
+                return
+            package = 'LizardByte.Sunshine' if role.get() == 'host' else 'MoonlightGameStreamingProject.Moonlight'
+            try:
+                subprocess.Popen(['winget', 'install', '--exact', '--id', package],
+                                 creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0))
+                status.set('Открылось окно Winget. Следуй его запросам, подтверди установку '
+                           'и UAC Windows, если он появится. После завершения нажми «Проверить ещё раз».')
+            except OSError as exc:
+                status.set('Не удалось запустить Winget: ' + str(exc))
+
+        role.trace_add('write', lambda *_: refresh())
+        buttons = ttk.Frame(body)
+        buttons.pack(side='bottom', fill='x', pady=(18, 0))
+        ttk.Button(buttons, text='Проверить ещё раз', command=refresh).pack(side='left')
+        install_button = ttk.Button(buttons, command=install)
+        install_button.pack(side='left', padx=8)
+
+        def finish():
+            
+            self.settings['setup_wizard_completed'] = True
+            save_settings(self.settings)
+            dialog.destroy()
+
+        ttk.Button(buttons, text='Перейти к подключению', command=lambda: (finish(), self.navigate(0))).pack(side='right')
+        host_help = ttk.Label(body, text='После установки нажми «Настройки Sunshine» во вкладке '
+                              '«Мой компьютер», создай учётную запись и добавь Desktop. '
+                              'Затем подключи гостевой ПК по PIN.', wraplength=590, justify='left')
+        dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
+        refresh()
+        dialog.grab_set()
+        dialog.focus_set()
 
     def help_check(self, parent, text, key, variable):
         row = ttk.Frame(parent)
@@ -278,6 +366,8 @@ class App(tk.Tk):
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
         values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get())
+        values['setup_wizard_completed'] = bool(self.settings.get('setup_wizard_completed'))
+        self.settings.update(values)
         save_settings(values)
 
     def setup_address(self, parent):

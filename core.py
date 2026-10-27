@@ -79,7 +79,8 @@ def stream_args(host, app, resolution, fps, bitrate, codec, low_latency, overlay
     return args
 
 def find_moonlight():
-    for base in (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', '')):
+    for base in (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', ''),
+                 os.environ.get('LOCALAPPDATA', '')):
         if base:
             candidate = Path(base) / 'Moonlight Game Streaming' / 'Moonlight.exe'
             if candidate.is_file():
