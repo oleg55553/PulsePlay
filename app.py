@@ -158,6 +158,10 @@ class App(tk.Tk):
         style.map('TCheckbutton', background=[('active','#141d2d')], indicatorbackground=[('selected','#83e4b1')], foreground=[('disabled','#74839b')])
         style.configure('TRadiobutton', background='#141d2d', padding=(0,5), indicatorbackground='#0e1626', foreground='#dce5f4')
         style.map('TRadiobutton', background=[('active','#141d2d')], indicatorbackground=[('selected','#83e4b1')])
+        style.configure('Horizontal.TScale', background='#141d2d', troughcolor='#0e1626',
+                        bordercolor='#2b3a53', lightcolor='#83e4b1', darkcolor='#83e4b1',
+                        sliderlength=18, sliderthickness=18)
+        style.map('Horizontal.TScale', background=[('active','#141d2d')])
         style.configure('TNotebook', background='#0b1020', borderwidth=0, tabmargins=0)
         style.layout('TNotebook.Tab', [])
         style.configure('Vertical.TScrollbar', background='#2b3a53', troughcolor='#0b1020', borderwidth=0, arrowsize=12, width=11)
@@ -212,7 +216,7 @@ class App(tk.Tk):
         self.vars = {}
         ttk.Label(client,text='НОВОЕ ПОДКЛЮЧЕНИЕ',foreground='#83e4b1',font=('Segoe UI',10,'bold')).grid(row=0,column=0,columnspan=3,sticky='w',pady=(0,18))
         advanced = ttk.Frame(client)
-        advanced.grid(row=10, column=0, columnspan=3, sticky='ew', pady=8)
+        advanced.grid(row=12, column=0, columnspan=3, sticky='ew', pady=8)
         advanced.columnconfigure(1, weight=1)
         moonlight_path = self.settings.get('moonlight', '')
         if not Path(moonlight_path).is_file():
@@ -221,12 +225,12 @@ class App(tk.Tk):
         ttk.Button(advanced, text='Выбрать…', command=self.select_exe).grid(row=0, column=2, padx=(8,0))
         self.advanced = advanced
         advanced.grid_remove()
-        ttk.Button(client, text='Дополнительные настройки ▾', command=self.toggle_advanced).grid(row=9, column=0, columnspan=3, sticky='w', pady=8)
+        ttk.Button(client, text='Дополнительные настройки ▾', command=self.toggle_advanced).grid(row=11, column=0, columnspan=3, sticky='w', pady=8)
         self.field(client, 'host', 'Адрес игрового ПК', self.settings.get('host', ''), 1)
         ttk.Button(client, text='Вставить IP', command=self.paste_host).grid(row=1, column=2, padx=(8,0))
         self.field(client, 'app', 'Игра в Sunshine', self.settings.get('app', 'Desktop'), 2)
         ttk.Button(client, text='Подключиться по приглашению хоста', command=self.paste_invite).grid(
-            row=8, column=0, columnspan=3, sticky='w', pady=8)
+            row=9, column=0, columnspan=3, sticky='w', pady=(8, 0))
         help_label(client, 'Профиль', 'preset').grid(row=3, column=0, sticky='w', pady=7)
         preset = ttk.Combobox(client, values=list(PRESETS), state='readonly')
         preset.set('Мои настройки' if self.settings.get('resolution') else 'Баланс • 1080p / 60')
@@ -275,7 +279,7 @@ class App(tk.Tk):
         ttk.Label(client, text='В игре: Ctrl+Alt+Shift+X — полный экран / окно\nCtrl+Alt+Shift+Q — отключиться, оставив игру запущенной', foreground='#9daac2').grid(row=7, column=0, columnspan=3, sticky='w', pady=6)
         help_label(client, 'Как подключиться впервые', 'connect').grid(row=8,column=0,columnspan=3,sticky='w',pady=6)
         buttons = ttk.Frame(client)
-        buttons.grid(row=9,column=0,columnspan=3,sticky='ew',pady=(14,0))
+        buttons.grid(row=10,column=0,columnspan=3,sticky='ew',pady=(10,0))
         self.pair_button = ttk.Button(buttons, text='Сопряжение · PIN', command=self.pair)
         self.pair_button.pack(side='left')
         ttk.Button(buttons, text='Куда вводить PIN?', command=self.show_pairing_help).pack(side='left', padx=(8, 0))
