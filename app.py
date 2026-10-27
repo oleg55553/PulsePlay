@@ -1,5 +1,5 @@
 """PulsePlay 0.8.12 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.12'
+APP_VERSION = '0.8.13'
 import os
 import ctypes
 from pathlib import Path
@@ -622,6 +622,7 @@ class App(tk.Tk):
         dialog.geometry('650x470')
         dialog.minsize(570, 420)
         dialog.transient(self)
+        dialog.attributes('-topmost', True)
         dialog.configure(bg='#0b1020')
 
         body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
@@ -685,7 +686,6 @@ class App(tk.Tk):
                 self.vars['moonlight'].set(moonlight_path)
             self.settings.update(host=host, app=app, moonlight=moonlight_path)
             save_settings(self.settings)
-            dialog.grab_release()
             dialog.destroy()
             if moonlight_path:
                 self.status.set('Приглашение заполнено • Moonlight найден • нажми «Сопряжение · PIN»')
@@ -703,7 +703,6 @@ class App(tk.Tk):
                    command=continue_with_invite).pack(side='right', padx=(0, 8))
         dialog.bind('<Control-Return>', continue_with_invite)
         dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
-        dialog.grab_set()
         dialog.focus_force()
 
     def copy_invite(self):
