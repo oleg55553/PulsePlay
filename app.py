@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.15 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.15'
+"""PulsePlay 0.8.16 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.16'
 import os
 import ctypes
 from pathlib import Path
@@ -451,44 +451,48 @@ class App(tk.Tk):
 
     def show_pairing_help(self, parent=None):
         dialog = tk.Toplevel(parent or self)
-        dialog.title('Инструкция для хоста — Sunshine → PIN')
-        dialog.geometry('680x520')
-        dialog.minsize(600, 460)
+        dialog.title('Что именно сделать хосту')
+        dialog.geometry('720x590')
+        dialog.minsize(640, 540)
         dialog.transient(parent or self)
         dialog.configure(bg='#0b1020')
 
         body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
         body.pack(fill='both', expand=True)
-        ttk.Label(body, text='Как подтвердить гостя в Sunshine',
+        ttk.Label(body, text='Что именно сделать на компьютере хоста',
                   font=('Segoe UI', 19, 'bold')).pack(anchor='w')
         ttk.Label(body,
-                  text='Эта инструкция для игрового компьютера (хоста), где открыта панель Sunshine. '
-                       'Сам интерфейс Sunshine пока показывает эти подписи на английском.',
-                  wraplength=620, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 14))
+                  text='Оставь открытой эту страницу Sunshine. Сначала гость должен начать сопряжение '
+                       'у себя в PulsePlay. Затем выполни шаги ниже.',
+                  wraplength=660, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 12))
 
-        translations = (
-            ('PIN Pairing', 'Сопряжение по PIN — нужная вкладка.'),
-            ('No devices are waiting to pair', 'Нет устройств, ожидающих сопряжения. Запрос от гостя ещё не пришёл.'),
-            ('PIN', 'Код, который PulsePlay показала на компьютере гостя.'),
-            ('Device Name', 'Название гостевого устройства, например PulsePlay Guest.'),
-            ('Send', 'Отправить код и подтвердить сопряжение.'),
+        steps = (
+            ('1. Попроси гостя начать подключение',
+             'На втором компьютере открыть PulsePlay → «Подключиться», вставить приглашение и нажать '
+             '«Сопряжение · PIN». Гость должен оставить PulsePlay открытой.'),
+            ('2. Выбери гостя в Sunshine',
+             'На вкладке PIN Pairing нажми стрелку в верхнем списке и выбери появившееся устройство.'),
+            ('3. Введи PIN гостя',
+             'В поле PIN введи четыре цифры, показанные PulsePlay на компьютере гостя.'),
+            ('4. Назови устройство и подтверди',
+             'В поле Device Name можно написать, например, «Компьютер друга». Нажми синюю кнопку Send.'),
+            ('5. Запусти игру',
+             'После сообщения об успешном сопряжении попроси гостя вернуться в PulsePlay и нажать «Играть».'),
         )
-        for english, russian in translations:
+        for title, description in steps:
             row = ttk.Frame(body, style='Page.TFrame')
-            row.pack(fill='x', pady=3)
-            ttk.Label(row, text=english, width=31, foreground='#83e4b1',
-                      font=('Segoe UI', 10, 'bold')).pack(side='left', anchor='nw')
-            ttk.Label(row, text=russian, wraplength=390, justify='left').pack(side='left', fill='x', expand=True)
+            row.pack(fill='x', pady=4)
+            ttk.Label(row, text=title, foreground='#83e4b1',
+                      font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+            ttk.Label(row, text=description, wraplength=660,
+                      justify='left').pack(anchor='w', pady=(2, 0))
 
         ttk.Label(body,
-                  text='Порядок действий: на гостевом ПК нажми «Сопряжение · PIN» и оставь PulsePlay открытой. '
-                       'Когда имя гостя появится в списке Sunshine, выбери его, введи гостевой PIN и нажми Send. '
-                       'После подтверждения гость нажимает «Играть».',
-                  wraplength=620, justify='left').pack(anchor='w', pady=(14, 8))
-        ttk.Label(body,
-                  text='Если список пуст, как на скриншоте, PIN пока вводить некуда: запрос ещё не дошёл '
-                       'до хоста. Проверь, что гость нажал сопряжение и подключается к правильному адресу хоста.',
-                  wraplength=620, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+                  text='Перевод полей: PIN Pairing — сопряжение по PIN; PIN — код гостя; '
+                       'Device Name — имя устройства; Send — подтвердить. '
+                       'No devices are waiting to pair означает «гость ещё не подключился к запросу». '
+                       'Пока список пуст, вводить PIN не нужно.',
+                  wraplength=660, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 10))
 
         buttons = ttk.Frame(body, style='Page.TFrame')
         buttons.pack(fill='x', side='bottom')
