@@ -79,50 +79,88 @@ def stream_args(host, app, resolution, fps, bitrate, codec, low_latency, overlay
     return args
 
 def _registered_executable(exe_name, product_name, service_name=None):
+    """Find an installed Windows app from registry metadata; never scans the network."""
     if os.name != 'nt':
         return ''
     try:
         import winreg
     except ImportError:
         return ''
-    def existing(raw):
-        raw = os.path.expandvars(str(raw or '').strip())
-        match = re.match(r'^\s*\"?(.+?\.exe)(?:\"|,|\s|$)', raw, re.I)
-        return match.group(1) if match and Path(match.group(1)).is_file() else ''
+
+    def parse_exe(value):
+        if not isinstance(value, str) or not value.strip():
+            return ''
+        value = os.path.expandvars(value.strip())
+        match = re.match(r'^\s*"?(.+?\.exe)(?:"|\s|,|$)', value, re.IGNORECASE)
+        if not match:
+            return ''
+        candidate = Path(match.group(1))
+        return str(candidate) if candidate.is_file() else ''
+
+    def expected_exe(value):
+        found = parse_exe(value)
+        return found if found and Path(found).name.casefold() == exe_name.casefold() else ''
+
     hives = (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE)
-    views = (0, getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0))
+    views = tuple(dict.fromkeys((0, getattr(winreg, 'KEY_WOW64_64KEY', 0),
+                                getattr(winreg, 'KEY_WOW64_32KEY', 0))))
     for hive in hives:
-        for view in dict.fromkeys(views):
-            path = rf'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}'
+        for view in views:
+            key_path = rf'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}'
             try:
-                with winreg.OpenKey(hive, path, 0, winreg.KEY_READ | view) as key:
-                    found = existing(winreg.QueryValueEx(key, '')[0])
-                    if found: return found
-            except OSError: pass
-            path = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+                with winreg.OpenKey(hive, key_path, 0, winreg.KEY_READ | view) as key:
+                    found = expected_exe(winreg.QueryValueEx(key, '')[0])
+                    if found:
+                        return found
+            except OSError:
+                pass
+
+            uninstall = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
             try:
-                with winreg.OpenKey(hive, path, 0, winreg.KEY_READ | view) as root:
-                    names = [winreg.EnumKey(root, i) for i in range(winreg.QueryInfoKey(root)[0])]
-            except OSError: names = []
-            for name in names:
+                with winreg.OpenKey(hive, uninstall, 0, winreg.KEY_READ | view) as root:
+                    subkeys = [winreg.EnumKey(root, i) for i in range(winreg.QueryInfoKey(root)[0])]
+            except OSError:
+                subkeys = []
+            for subkey in subkeys:
                 try:
-                    with winreg.OpenKey(hive, path + '\\' + name, 0, winreg.KEY_READ | view) as key:
-                        if product_name.casefold() not in str(winreg.QueryValueEx(key, 'DisplayName')[0]).casefold(): continue
-                        for field in ('DisplayIcon', 'InstallLocation'):
-                            try: value = winreg.QueryValueEx(key, field)[0]
-                            except OSError: continue
-                            found = existing(value)
-                            if found: return found
-                            folder = Path(os.path.expandvars(str(value).strip().strip('\"')))
-                            for candidate in (folder / exe_name, folder / 'bin' / exe_name):
-                                if candidate.is_file(): return str(candidate)
-                except OSError: pass
-    if service_name:
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, rf'SYSTEM\CurrentControlSet\Services\{service_name}') as key:
-                found = existing(winreg.QueryValueEx(key, 'ImagePath')[0])
-                if found: return found
-        except OSError: pass
+                    with winreg.OpenKey(hive, uninstall + '\\' + subkey, 0,
+                                        winreg.KEY_READ | view) as key:
+                        display = str(winreg.QueryValueEx(key, 'DisplayName')[0])
+                        if product_name.casefold() not in display.casefold():
+                            continue
+                        for value_name in ('DisplayIcon', 'InstallLocation'):
+                            try:
+                                raw = winreg.QueryValueEx(key, value_name)[0]
+                            except OSError:
+                                continue
+                            found = expected_exe(str(raw))
+                            if found:
+                                return found
+                            location = Path(os.path.expandvars(str(raw).strip().strip('"')))
+                            for candidate in (location / exe_name, location / 'bin' / exe_name):
+                                if candidate.is_file():
+                                    return str(candidate)
+                except OSError:
+                    pass
+
+    service_names = service_name if isinstance(service_name, (tuple, list)) else (service_name,)
+    for name in filter(None, service_names):
+        for view in views:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                    rf'SYSTEM\CurrentControlSet\Services\{name}',
+                                    0, winreg.KEY_READ | view) as key:
+                    service_exe = parse_exe(winreg.QueryValueEx(key, 'ImagePath')[0])
+                    if not service_exe:
+                        continue
+                    if Path(service_exe).name.casefold() == exe_name.casefold():
+                        return service_exe
+                    for candidate in (Path(service_exe).parent / exe_name,
+                                      Path(service_exe).parent.parent / exe_name):
+                        if candidate.is_file():
+                            return str(candidate)
+            except OSError:
+                pass
     return ''
 
 def _find_local(exe_name, product_name, folders, commands, service_name=None):
@@ -146,7 +184,7 @@ def find_moonlight():
 def find_sunshine():
     """Find installed Sunshine locally; never scan the network."""
     return _find_local('sunshine.exe', 'sunshine', ('Sunshine', 'Programs/Sunshine'),
-                       ('sunshine.exe', 'sunshine'), 'Sunshine')
+                       ('sunshine.exe', 'sunshine'), ('SunshineService', 'Sunshine'))
 
 def config_path():
     return Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.config'))) / 'PulsePlay' / 'settings.json'
