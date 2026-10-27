@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.12 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.13'
+"""PulsePlay 0.8.14 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.14'
 import os
 import ctypes
 from pathlib import Path
@@ -268,6 +268,8 @@ class App(tk.Tk):
         help_label(volume_frame, 'Громкость у гостя', 'volume').grid(row=0, column=0, sticky='w', padx=(0, 14))
         self.volume = tk.IntVar(value=max(0, min(100, int(self.settings.get('volume', 100)))))
         self.volume_value = tk.StringVar(value=f'{self.volume.get()}%')
+        self._volume_before_mute = max(1, min(100, int(self.settings.get('last_unmuted_volume', self.volume.get() or 80))))
+        self.mute_text = tk.StringVar(value='Включить звук' if self.volume.get() == 0 else 'Выключить звук')
         self.volume_scale = ttk.Scale(volume_frame, from_=0, to=100, variable=self.volume,
                                       command=self.update_volume_label)
         self.volume_scale.grid(row=0, column=1, sticky='ew')
@@ -275,6 +277,8 @@ class App(tk.Tk):
         self.volume_scale.bind('<Button-4>', lambda _event: self.volume_wheel_step(5))
         self.volume_scale.bind('<Button-5>', lambda _event: self.volume_wheel_step(-5))
         ttk.Label(volume_frame, textvariable=self.volume_value, width=5, anchor='e').grid(row=0, column=2, padx=(8, 0))
+        self.mute_button = ttk.Button(volume_frame, textvariable=self.mute_text, command=self.toggle_mute)
+        self.mute_button.grid(row=0, column=3, padx=(10, 0))
         ttk.Label(client, text='Меняется сразу. Колесо мыши над ползунком регулирует по 5%.',
                   foreground='#9daac2').grid(row=6, column=0, columnspan=3, sticky='w', pady=(0, 2))
         ttk.Label(client, text='В игре: Ctrl+Alt+Shift+X — полный экран / окно\nCtrl+Alt+Shift+Q — отключиться, оставив игру запущенной', foreground='#9daac2').grid(row=7, column=0, columnspan=3, sticky='w', pady=6)
@@ -723,7 +727,7 @@ class App(tk.Tk):
 
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
-        values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get(), volume=self.volume.get())
+        values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get(), volume=self.volume.get(), last_unmuted_volume=self._volume_before_mute)
         values['setup_wizard_completed'] = bool(self.settings.get('setup_wizard_completed'))
         self.settings.update(values)
         save_settings(values)
@@ -732,9 +736,22 @@ class App(tk.Tk):
         volume = max(0, min(100, int(float(value))))
         self.volume.set(volume)
         self.volume_value.set(f'{volume}%')
+        if volume > 0:
+            self._volume_before_mute = volume
+            self.mute_text.set('Выключить звук')
+        else:
+            self.mute_text.set('Включить звук')
         if hasattr(self, '_volume_apply_job'):
             self.after_cancel(self._volume_apply_job)
         self._volume_apply_job = self.after(150, self.apply_guest_volume)
+
+    def toggle_mute(self):
+        if self.volume.get() > 0:
+            self._volume_before_mute = self.volume.get()
+            self.volume.set(0)
+        else:
+            self.volume.set(max(1, min(100, int(self._volume_before_mute or 80))))
+        self.update_volume_label(self.volume.get())
 
     def volume_wheel(self, event):
         if event.delta:
