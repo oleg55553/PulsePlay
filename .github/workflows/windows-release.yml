@@ -48,4 +48,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh release edit latest --target $env:GITHUB_SHA --title "PulsePlay для Windows" --notes "Установщик Windows x64. Sunshine/Moonlight ставятся отдельно через мастер первого запуска."
           gh release upload latest dist/PulsePlay-Setup.exe dist/PulsePlay.exe --clobber

@@ -145,6 +145,7 @@ class App(tk.Tk):
         buttons.grid(row=7,column=0,columnspan=3,sticky='ew',pady=(14,0))
         self.pair_button = ttk.Button(buttons, text='Сопряжение · PIN', command=self.pair)
         self.pair_button.pack(side='left')
+        ttk.Button(buttons, text='Куда вводить PIN?', command=self.show_pairing_help).pack(side='left', padx=(8, 0))
         self.play_button = ttk.Button(buttons, text='Играть  →', style='Accent.TButton', command=self.play)
         self.play_button.pack(side='left',padx=12,fill='x',expand=True)
         self.stop_button = ttk.Button(buttons, text='Отключиться', command=self.stop, state='disabled')
@@ -243,18 +244,19 @@ class App(tk.Tk):
         status = tk.StringVar()
         ttk.Label(body, textvariable=status, wraplength=590, justify='left').pack(anchor='w', pady=14)
 
-        def locate_sunshine():
-            return find_sunshine()
-
         def refresh():
-            found = locate_sunshine() if role.get() == 'host' else find_moonlight()
+            sunshine = find_sunshine()
+            moonlight = find_moonlight()
+            found = sunshine if role.get() == 'host' else moonlight
             requirement = 'Sunshine' if role.get() == 'host' else 'Moonlight'
-            status.set(f'{requirement}: ' + ('установлена.' if found else 'пока не найдена.') +
-                       ('\nWinget: доступен.' if shutil.which('winget') else '\nWinget: не найден. Установи «Установщик приложений» из Microsoft Store.') +
-                       '\n\nПри установке Winget может показать условия пакета и запрос UAC Windows. '
-                       'Проверь название пакета в открывшемся окне перед продолжением.')
-            install_button.configure(state='disabled' if found else 'normal',
-                                     text='Уже установлено' if found else f'Установить {requirement}')
+            def describe(name, path):
+                return f'{name}: найдено на этом компьютере.\n  {path}' if path else f'{name}: не найдено.'
+            status.set('PulsePlay проверил установленные программы на этом ПК. Искать их в интернете вручную не нужно.\n\n' +
+                       describe('Sunshine', sunshine) + '\n' + describe('Moonlight', moonlight) +
+                       ('\n\nКнопка ниже установит или переустановит выбранную среду через Winget.' if shutil.which('winget') else
+                        '\n\nWinget не найден. Кнопка ниже откроет официальный источник загрузки выбранной среды.'))
+            install_button.configure(state='normal',
+                                     text=f'Установить / переустановить {requirement}')
             host_help.pack_forget()
             if role.get() == 'host':
                 host_help.pack(anchor='w', pady=(6, 0))
@@ -267,19 +269,22 @@ class App(tk.Tk):
                 return
             package = 'LizardByte.Sunshine' if role.get() == 'host' else 'MoonlightGameStreamingProject.Moonlight'
             try:
-                subprocess.Popen(['winget', 'install', '--exact', '--id', package],
+                subprocess.Popen(['winget', 'install', '--exact', '--force', '--id', package],
                                  creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0))
-                status.set('Открылось окно Winget. Следуй его запросам, подтверди установку '
-                           'и UAC Windows, если он появится. После завершения нажми «Проверить ещё раз».')
+                status.set('Открылось окно Winget для установки или переустановки ' + package +
+                           '. Следуй запросам в чёрном окне и подтверди установку Windows, если появится запрос. '
+                           'После завершения нажми «Проверить программы на ПК». Настройки Sunshine хранятся '
+                           'отдельно; переустановка программы может не удалить их.')
             except OSError as exc:
                 status.set('Не удалось запустить Winget: ' + str(exc))
 
         role.trace_add('write', lambda *_: refresh())
         buttons = ttk.Frame(body)
         buttons.pack(side='bottom', fill='x', pady=(18, 0))
-        ttk.Button(buttons, text='Проверить ещё раз', command=refresh).pack(side='left')
+        ttk.Button(buttons, text='Проверить программы на ПК', command=refresh).pack(side='left')
         install_button = ttk.Button(buttons, command=install)
         install_button.pack(side='left', padx=8)
+        ttk.Button(buttons, text='Куда вводить PIN?', command=self.show_pairing_help).pack(side='left')
 
         def finish():
             
@@ -301,6 +306,64 @@ class App(tk.Tk):
         ttk.Checkbutton(row, text=text, variable=variable).pack(side='left')
         help_label(row, '', key).pack(side='left')
         return row
+
+    def show_pairing_help(self):
+        messagebox.showinfo(
+            'Куда вводить PIN',
+            'PIN вводится на ИГРОВОМ компьютере (хосте), где запущен Sunshine.\n\n'
+            '1. Оставь открытым окно Moonlight/PulsePlay на компьютере гостя.\n'
+            '2. На игровом ПК открой панель Sunshine: https://localhost:47990\n'
+            '3. В меню Sunshine открой PIN и введи код, показанный в окне Moonlight.\n'
+            '4. Подтверди сопряжение. После этого вернись к гостю и нажми «Играть».\n\n'
+            'Не вводи этот PIN в PulsePlay или в поле адреса. Если игровой ПК другой, '
+            'адрес localhost нужно открыть именно на игровом ПК.'
+        )
+
+    def show_pairing_window(self, host, pin):
+        """Keep the Moonlight pairing code visible and ready to paste."""
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(pin)
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+        dialog = tk.Toplevel(self)
+        dialog.title('Подтверждение подключения')
+        dialog.geometry('560x360')
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.configure(bg='#0c101b')
+        body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='Передай этот код на игровой компьютер',
+                  font=('Segoe UI', 17, 'bold')).pack(anchor='w')
+        ttk.Label(body, text=f'Подключение к: {host}', foreground='#96a6c1').pack(anchor='w', pady=(6, 12))
+        ttk.Label(body, text=pin, font=('Consolas', 38, 'bold'), foreground='#a3edba').pack(pady=6)
+        ttk.Label(body, text='Код уже скопирован. На игровом ПК открой Sunshine → PIN и вставь его.\n'
+                  'Если хост находится в другом городе, отправь код хозяину через личный чат/звонок.\n'
+                  'Для безопасности PulsePlay не вводит код удалённо в панель Sunshine.',
+                  wraplength=500, justify='left').pack(anchor='w', pady=(4, 14))
+        buttons = ttk.Frame(body)
+        buttons.pack(fill='x', side='bottom')
+        first_row = ttk.Frame(buttons)
+        first_row.pack(fill='x', pady=(0, 8))
+        ttk.Button(first_row, text='Скопировать код', command=lambda: self.copy_pairing_pin(pin)).pack(side='left')
+        ttk.Button(first_row, text='Куда вводить?', command=self.show_pairing_help).pack(side='left', padx=8)
+        ttk.Button(buttons, text='Открыть Sunshine на этом ПК (только если это хост)',
+                   command=lambda: webbrowser.open('https://localhost:47990')).pack(side='left')
+        ttk.Button(buttons, text='Закрыть', command=dialog.destroy).pack(side='right')
+        dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
+        dialog.grab_set()
+        dialog.focus_set()
+
+    def copy_pairing_pin(self, pin):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(pin)
+            self.update_idletasks()
+            self.status.set('PIN скопирован. Введи его на игровом ПК в Sunshine → PIN.')
+        except tk.TclError:
+            messagebox.showerror('Буфер обмена', 'Не удалось скопировать PIN.')
 
     def navigate(self, index):
         self.book.select(index)
@@ -438,6 +501,9 @@ class App(tk.Tk):
                    command=self.copy_provider_request).pack(anchor='w', pady=4)
         self.diagnostic_button = ttk.Button(frame, text='Проверить указанный игровой ПК', command=self.check_network)
         self.diagnostic_button.pack(anchor='w', pady=8)
+        ttk.Label(frame, text='Сначала введи IP или имя игрового ПК во вкладке «01 Подключиться» → «Адрес игрового ПК». '
+                  'Затем нажми эту кнопку. Результат появится в журнале PulsePlay ниже.',
+                  wraplength=720, justify='left', foreground='#96a6c1').pack(anchor='w', padx=(2, 0))
         ttk.Label(frame, text='Звук игры передаёт Sunshine вместе с изображением.',
                   font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(16, 4))
         ttk.Label(frame, text='Если у гостя нет звука: в Sunshine → Audio/Video проверь '
@@ -563,6 +629,7 @@ class App(tk.Tk):
             self.launch(['pair',host,'--pin',pin],'сопряжение')
             self.show_log()
             self.write('PIN: '+pin+' — введи его в панели Sunshine → PIN на игровом ПК.')
+            self.show_pairing_window(host, pin)
         except (ValueError,OSError) as exc:
             messagebox.showerror('Сопряжение',str(exc))
 

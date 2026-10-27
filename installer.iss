@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.2"
+#define AppVersion "0.8.3"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 
@@ -34,8 +34,8 @@ Name: "desktopicon"; Description: "Создать значок на рабоче
 [Files]
 Source: "dist\PulsePlay.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-; Remove source files if an older ZIP was unpacked into this install folder.
-; User settings are stored outside {app} and are preserved.
+; Clean loose files left by the earlier source-archive version if it was
+; unpacked into this install folder. User settings live outside {app}.
 [InstallDelete]
 Type: files; Name: "{app}\app.py"
 Type: files; Name: "{app}\core.py"

@@ -87,7 +87,7 @@ def _registered_executable(exe_name, product_name, service_name=None):
     except ImportError:
         return ''
 
-    def parse_exe(value):
+    def as_exe(value, require_expected_name=True):
         if not isinstance(value, str) or not value.strip():
             return ''
         value = os.path.expandvars(value.strip())
@@ -95,21 +95,19 @@ def _registered_executable(exe_name, product_name, service_name=None):
         if not match:
             return ''
         candidate = Path(match.group(1))
+        if require_expected_name and candidate.name.casefold() != exe_name.casefold():
+            return ''
         return str(candidate) if candidate.is_file() else ''
 
-    def expected_exe(value):
-        found = parse_exe(value)
-        return found if found and Path(found).name.casefold() == exe_name.casefold() else ''
-
     hives = (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE)
-    views = tuple(dict.fromkeys((0, getattr(winreg, 'KEY_WOW64_64KEY', 0),
-                                getattr(winreg, 'KEY_WOW64_32KEY', 0))))
+    views = (getattr(winreg, 'KEY_WOW64_64KEY', 0),
+             getattr(winreg, 'KEY_WOW64_32KEY', 0), 0)
     for hive in hives:
         for view in views:
             key_path = rf'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}'
             try:
                 with winreg.OpenKey(hive, key_path, 0, winreg.KEY_READ | view) as key:
-                    found = expected_exe(winreg.QueryValueEx(key, '')[0])
+                    found = as_exe(winreg.QueryValueEx(key, '')[0])
                     if found:
                         return found
             except OSError:
@@ -133,7 +131,7 @@ def _registered_executable(exe_name, product_name, service_name=None):
                                 raw = winreg.QueryValueEx(key, value_name)[0]
                             except OSError:
                                 continue
-                            found = expected_exe(str(raw))
+                            found = as_exe(str(raw))
                             if found:
                                 return found
                             location = Path(os.path.expandvars(str(raw).strip().strip('"')))
@@ -143,48 +141,63 @@ def _registered_executable(exe_name, product_name, service_name=None):
                 except OSError:
                     pass
 
-    service_names = service_name if isinstance(service_name, (tuple, list)) else (service_name,)
-    for name in filter(None, service_names):
-        for view in views:
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                    rf'SYSTEM\CurrentControlSet\Services\{name}',
-                                    0, winreg.KEY_READ | view) as key:
-                    service_exe = parse_exe(winreg.QueryValueEx(key, 'ImagePath')[0])
-                    if not service_exe:
-                        continue
-                    if Path(service_exe).name.casefold() == exe_name.casefold():
-                        return service_exe
-                    for candidate in (Path(service_exe).parent / exe_name,
-                                      Path(service_exe).parent.parent / exe_name):
-                        if candidate.is_file():
-                            return str(candidate)
-            except OSError:
-                pass
+    if service_name:
+        service_names = service_name if isinstance(service_name, (tuple, list)) else (service_name,)
+        for name in service_names:
+            for view in views:
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                        rf'SYSTEM\CurrentControlSet\Services\{name}',
+                                        0, winreg.KEY_READ | view) as key:
+                        service_exe = as_exe(winreg.QueryValueEx(key, 'ImagePath')[0],
+                                             require_expected_name=False)
+                        if service_exe:
+                            service_path = Path(service_exe)
+                            if service_path.name.casefold() == exe_name.casefold():
+                                return str(service_path)
+                            # Recent Sunshine installs run sunshinesvc.exe from tools/;
+                            # the actual sunshine.exe lives one directory above.
+                            for candidate in (service_path.parent / exe_name,
+                                             service_path.parent.parent / exe_name):
+                                if candidate.is_file():
+                                    return str(candidate)
+                except OSError:
+                    pass
     return ''
 
-def _find_local(exe_name, product_name, folders, commands, service_name=None):
-    roots = (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramW6432', ''),
-             os.environ.get('ProgramFiles(x86)', ''), os.environ.get('LOCALAPPDATA', ''))
-    for root in roots:
-        if root:
-            for folder in folders:
-                candidate = Path(root) / folder / exe_name
-                if candidate.is_file(): return str(candidate)
-    for command in commands:
+
+def _find_program(exe_name, product_name, folders, command_names, service_name=None):
+    for folder in folders:
+        if folder:
+            candidate = Path(folder) / exe_name
+            if candidate.is_file():
+                return str(candidate)
+    for command in command_names:
         found = shutil.which(command)
-        if found: return found
+        if found:
+            return found
     return _registered_executable(exe_name, product_name, service_name)
 
+
 def find_moonlight():
-    """Find installed Moonlight locally; never scan the network."""
-    return _find_local('Moonlight.exe', 'moonlight', ('Moonlight Game Streaming', 'Moonlight'),
-                       ('Moonlight.exe', 'moonlight'))
+    """Locate Moonlight in common install folders, PATH, and Windows app records."""
+    roots = (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramW6432', ''),
+             os.environ.get('ProgramFiles(x86)', ''), os.environ.get('LOCALAPPDATA', ''))
+    folders = [str(Path(root) / relative) for root in roots if root for relative in
+               ('Moonlight Game Streaming/Moonlight.exe', 'Moonlight/Moonlight.exe')]
+    return _find_program('Moonlight.exe', 'moonlight', folders,
+                         ('Moonlight.exe', 'moonlight'))
+
 
 def find_sunshine():
-    """Find installed Sunshine locally; never scan the network."""
-    return _find_local('sunshine.exe', 'sunshine', ('Sunshine', 'Programs/Sunshine'),
-                       ('sunshine.exe', 'sunshine'), ('SunshineService', 'Sunshine'))
+    """Locate Sunshine locally, including the executable registered by its service."""
+    roots = (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramW6432', ''),
+             os.environ.get('ProgramFiles(x86)', ''), os.environ.get('LOCALAPPDATA', ''))
+    folders = [str(Path(root) / relative) for root in roots if root for relative in
+               ('Sunshine/sunshine.exe', 'Programs/Sunshine/sunshine.exe')]
+    return _find_program('sunshine.exe', 'sunshine', folders,
+                         ('sunshine.exe', 'sunshine'),
+                         service_name=('SunshineService', 'Sunshine'))
 
 def config_path():
     return Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.config'))) / 'PulsePlay' / 'settings.json'
