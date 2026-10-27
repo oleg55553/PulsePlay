@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.10"
+#define AppVersion "0.8.11"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 

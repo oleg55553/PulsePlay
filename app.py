@@ -1,4 +1,5 @@
-"""PulsePlay 0.8 — desktop launcher for separately installed Moonlight/Sunshine."""
+"""PulsePlay 0.8.11 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.11'
 import os
 import ctypes
 from pathlib import Path
@@ -179,7 +180,7 @@ class App(tk.Tk):
             button=tk.Button(sidebar,text=label,anchor='w',bg='#101827',fg='#9aaac1',activebackground='#1c2b38',activeforeground='#83e4b1',relief='flat',bd=0,font=('Segoe UI',10),padx=16,pady=13,cursor='hand2',command=lambda i=index:self.navigate(i))
             button.pack(fill='x',padx=10,pady=3)
             self.nav_buttons.append(button)
-        tk.Label(sidebar,text='PULSEPLAY  /  0.8\nНа базе Sunshine + Moonlight',justify='left',bg='#101827',fg='#8494ae',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
+        tk.Label(sidebar,text=f'PULSEPLAY  /  {APP_VERSION}\nНа базе Sunshine + Moonlight',justify='left',bg='#101827',fg='#8494ae',font=('Segoe UI',9)).pack(side='bottom',anchor='w',padx=24,pady=24)
         viewport = tk.Canvas(self, bg='#0b1020', highlightthickness=0)
         self.viewport = viewport
         scrollbar = ttk.Scrollbar(self, orient='vertical', command=viewport.yview)
@@ -344,7 +345,7 @@ class App(tk.Tk):
 
         if not self.vars['moonlight'].get():
             self.advanced.grid()
-        self.write('PulsePlay 0.8 • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
+        self.write(f'PulsePlay {APP_VERSION} • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
         self.after(100,self.poll)
         self.after(200,self.refresh_address)
         self.after(500,self.maybe_setup_wizard)
