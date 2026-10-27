@@ -78,14 +78,75 @@ def stream_args(host, app, resolution, fps, bitrate, codec, low_latency, overlay
     args += ['--no-vsync', '--no-frame-pacing'] if low_latency else ['--vsync', '--frame-pacing']
     return args
 
+def _registered_executable(exe_name, product_name, service_name=None):
+    if os.name != 'nt':
+        return ''
+    try:
+        import winreg
+    except ImportError:
+        return ''
+    def existing(raw):
+        raw = os.path.expandvars(str(raw or '').strip())
+        match = re.match(r'^\s*\"?(.+?\.exe)(?:\"|,|\s|$)', raw, re.I)
+        return match.group(1) if match and Path(match.group(1)).is_file() else ''
+    hives = (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE)
+    views = (0, getattr(winreg, 'KEY_WOW64_64KEY', 0), getattr(winreg, 'KEY_WOW64_32KEY', 0))
+    for hive in hives:
+        for view in dict.fromkeys(views):
+            path = rf'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}'
+            try:
+                with winreg.OpenKey(hive, path, 0, winreg.KEY_READ | view) as key:
+                    found = existing(winreg.QueryValueEx(key, '')[0])
+                    if found: return found
+            except OSError: pass
+            path = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+            try:
+                with winreg.OpenKey(hive, path, 0, winreg.KEY_READ | view) as root:
+                    names = [winreg.EnumKey(root, i) for i in range(winreg.QueryInfoKey(root)[0])]
+            except OSError: names = []
+            for name in names:
+                try:
+                    with winreg.OpenKey(hive, path + '\\' + name, 0, winreg.KEY_READ | view) as key:
+                        if product_name.casefold() not in str(winreg.QueryValueEx(key, 'DisplayName')[0]).casefold(): continue
+                        for field in ('DisplayIcon', 'InstallLocation'):
+                            try: value = winreg.QueryValueEx(key, field)[0]
+                            except OSError: continue
+                            found = existing(value)
+                            if found: return found
+                            folder = Path(os.path.expandvars(str(value).strip().strip('\"')))
+                            for candidate in (folder / exe_name, folder / 'bin' / exe_name):
+                                if candidate.is_file(): return str(candidate)
+                except OSError: pass
+    if service_name:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, rf'SYSTEM\CurrentControlSet\Services\{service_name}') as key:
+                found = existing(winreg.QueryValueEx(key, 'ImagePath')[0])
+                if found: return found
+        except OSError: pass
+    return ''
+
+def _find_local(exe_name, product_name, folders, commands, service_name=None):
+    roots = (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramW6432', ''),
+             os.environ.get('ProgramFiles(x86)', ''), os.environ.get('LOCALAPPDATA', ''))
+    for root in roots:
+        if root:
+            for folder in folders:
+                candidate = Path(root) / folder / exe_name
+                if candidate.is_file(): return str(candidate)
+    for command in commands:
+        found = shutil.which(command)
+        if found: return found
+    return _registered_executable(exe_name, product_name, service_name)
+
 def find_moonlight():
-    for base in (os.environ.get('ProgramFiles', ''), os.environ.get('ProgramFiles(x86)', ''),
-                 os.environ.get('LOCALAPPDATA', '')):
-        if base:
-            candidate = Path(base) / 'Moonlight Game Streaming' / 'Moonlight.exe'
-            if candidate.is_file():
-                return str(candidate)
-    return shutil.which('Moonlight.exe') or shutil.which('moonlight') or ''
+    """Find installed Moonlight locally; never scan the network."""
+    return _find_local('Moonlight.exe', 'moonlight', ('Moonlight Game Streaming', 'Moonlight'),
+                       ('Moonlight.exe', 'moonlight'))
+
+def find_sunshine():
+    """Find installed Sunshine locally; never scan the network."""
+    return _find_local('sunshine.exe', 'sunshine', ('Sunshine', 'Programs/Sunshine'),
+                       ('sunshine.exe', 'sunshine'), 'Sunshine')
 
 def config_path():
     return Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.config'))) / 'PulsePlay' / 'settings.json'
