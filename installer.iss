@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.3"
+#define AppVersion "0.8.4"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 
@@ -19,7 +19,8 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
-CloseApplications=yes
+CloseApplications=force
+CloseApplicationsFilter=PulsePlay.exe
 RestartApplications=no
 Uninstallable=yes
 UsePreviousAppDir=yes
