@@ -1,11 +1,13 @@
 """PulsePlay 0.8 — desktop launcher for separately installed Moonlight/Sunshine."""
 import os
+import ctypes
 from pathlib import Path
 import queue
 import secrets
 import shutil
 import subprocess
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import webbrowser
@@ -13,6 +15,116 @@ import webbrowser
 from help_ui import help_label
 from network import diagnose, host_profile, own_address
 from core import PRESETS, find_moonlight, find_sunshine, load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
+
+
+def copy_text_to_clipboard(widget, text):
+    """Copy Unicode text reliably on Windows, including PyInstaller builds."""
+    if os.name != 'nt':
+        widget.clipboard_clear()
+        widget.clipboard_append(text)
+        widget.update_idletasks()
+        return
+
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.argtypes = []
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.SetClipboardData.argtypes = [wintypes.UINT, ctypes.c_void_p]
+    user32.SetClipboardData.restype = ctypes.c_void_p
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalFree.restype = ctypes.c_void_p
+
+    opened = False
+    for _ in range(20):
+        if user32.OpenClipboard(wintypes.HWND(widget.winfo_id())):
+            opened = True
+            break
+        time.sleep(0.05)
+    if not opened:
+        raise tk.TclError('Не удалось открыть буфер обмена Windows.')
+
+    memory = None
+    transferred = False
+    try:
+        if not user32.EmptyClipboard():
+            raise tk.TclError('Не удалось очистить буфер обмена Windows.')
+        payload = (str(text) + '\0').encode('utf-16le')
+        memory = kernel32.GlobalAlloc(0x0002, len(payload))  # GMEM_MOVEABLE
+        if not memory:
+            raise tk.TclError('Не удалось выделить память для буфера обмена.')
+        pointer = kernel32.GlobalLock(memory)
+        if not pointer:
+            raise tk.TclError('Не удалось записать буфер обмена.')
+        try:
+            ctypes.memmove(pointer, payload, len(payload))
+        finally:
+            kernel32.GlobalUnlock(memory)
+        if not user32.SetClipboardData(13, memory):  # CF_UNICODETEXT
+            raise tk.TclError('Windows не приняла текст в буфер обмена.')
+        transferred = True  # Windows owns the memory after SetClipboardData.
+    finally:
+        if memory and not transferred:
+            kernel32.GlobalFree(memory)
+        user32.CloseClipboard()
+
+
+def read_clipboard_text(widget):
+    """Read Unicode clipboard text without relying on Tcl's STRING target."""
+    if os.name != 'nt':
+        return widget.clipboard_get()
+
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+    user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+    opened = False
+    for _ in range(20):
+        if user32.OpenClipboard(wintypes.HWND(widget.winfo_id())):
+            opened = True
+            break
+        time.sleep(0.05)
+    if not opened:
+        raise tk.TclError('Не удалось открыть буфер обмена Windows.')
+    try:
+        if not user32.IsClipboardFormatAvailable(13):  # CF_UNICODETEXT
+            raise tk.TclError('В буфере обмена нет текста.')
+        memory = user32.GetClipboardData(13)
+        if not memory:
+            raise tk.TclError('Не удалось получить текст из буфера обмена.')
+        pointer = kernel32.GlobalLock(memory)
+        if not pointer:
+            raise tk.TclError('Не удалось прочитать текст из буфера обмена.')
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel32.GlobalUnlock(memory)
+    finally:
+        user32.CloseClipboard()
 
 class App(tk.Tk):
     def __init__(self):
@@ -107,7 +219,7 @@ class App(tk.Tk):
         self.field(client, 'host', 'Адрес игрового ПК', self.settings.get('host', ''), 1)
         ttk.Button(client, text='Вставить IP', command=self.paste_host).grid(row=1, column=2, padx=(8,0))
         self.field(client, 'app', 'Игра в Sunshine', self.settings.get('app', 'Desktop'), 2)
-        ttk.Button(client, text='Вставить приглашение от хоста', command=self.paste_invite).grid(
+        ttk.Button(client, text='Подключиться по приглашению хоста', command=self.paste_invite).grid(
             row=8, column=0, columnspan=3, sticky='w', pady=8)
         help_label(client, 'Профиль', 'preset').grid(row=3, column=0, sticky='w', pady=7)
         preset = ttk.Combobox(client, values=list(PRESETS), state='readonly')
@@ -322,9 +434,7 @@ class App(tk.Tk):
     def show_pairing_window(self, host, pin):
         """Keep the Moonlight pairing code visible and ready to paste."""
         try:
-            self.clipboard_clear()
-            self.clipboard_append(pin)
-            self.update_idletasks()
+            copy_text_to_clipboard(self, pin)
         except tk.TclError:
             pass
         dialog = tk.Toplevel(self)
@@ -358,9 +468,7 @@ class App(tk.Tk):
 
     def copy_pairing_pin(self, pin):
         try:
-            self.clipboard_clear()
-            self.clipboard_append(pin)
-            self.update_idletasks()
+            copy_text_to_clipboard(self, pin)
             self.status.set('PIN скопирован. Введи его на игровом ПК в Sunshine → PIN.')
         except tk.TclError:
             messagebox.showerror('Буфер обмена', 'Не удалось скопировать PIN.')
@@ -396,17 +504,27 @@ class App(tk.Tk):
 
     def paste_host(self):
         try:
-            address = validate_host(self.clipboard_get())
+            address = validate_host(read_clipboard_text(self))
             self.vars['host'].set(address)
         except (tk.TclError, ValueError):
             messagebox.showerror('Вставить IP', 'Скопируй только IP или имя игрового ПК, без другого текста.')
 
     def paste_invite(self):
         try:
-            host, app = parse_invite(self.clipboard_get())
+            host, app = parse_invite(read_clipboard_text(self))
             self.vars['host'].set(host)
             self.vars['app'].set(app)
-            self.status.set('Приглашение вставлено • нажми «Сопряжение · PIN», затем «Играть»')
+            moonlight_path = self.vars['moonlight'].get().strip()
+            if not Path(moonlight_path).is_file():
+                moonlight_path = find_moonlight() or ''
+                self.vars['moonlight'].set(moonlight_path)
+            self.settings.update(host=host, app=app, moonlight=moonlight_path)
+            save_settings(self.settings)
+            if moonlight_path:
+                self.status.set('Приглашение заполнено • Moonlight найден • нажми «Сопряжение · PIN»')
+            else:
+                self.status.set('Приглашение заполнено • открываю настройку Moonlight')
+                self.after(100, self.show_setup_wizard)
         except (tk.TclError, ValueError) as exc:
             messagebox.showerror('Приглашение', str(exc))
 
@@ -421,8 +539,7 @@ class App(tk.Tk):
                 if not address:
                     raise ValueError('Сначала получи публичный IPv4 роутера кнопкой «Обновить».')
             invite = make_invite(address, self.host_app.get())
-            self.clipboard_clear()
-            self.clipboard_append(invite)
+            copy_text_to_clipboard(self, invite)
             self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
         except (ValueError, tk.TclError) as exc:
             messagebox.showerror('Приглашение', str(exc) or 'Сначала получи публичный IP роутера.')
@@ -469,8 +586,7 @@ class App(tk.Tk):
         if not address:
             return
         try:
-            self.clipboard_clear()
-            self.clipboard_append(address)
+            copy_text_to_clipboard(self, address)
             self.address_status.set('IP скопирован. Отправь его доверенному человеку; для подключения нужны открытые порты и PIN Sunshine.')
         except tk.TclError:
             self.address_status.set('Не удалось скопировать. Выдели адрес в поле и нажми Ctrl+C.')
@@ -521,8 +637,7 @@ class App(tk.Tk):
                    'Будет ли публичный адрес назначен моему роутеру и смогу ли я '
                    'настроить проброс портов или UPnP?')
         try:
-            self.clipboard_clear()
-            self.clipboard_append(request)
+            copy_text_to_clipboard(self, request)
             self.show_log()
             self.write('Запрос Ростелекому скопирован. Отправь его через официальный '
                        'личный кабинет или задай оператору по телефону.')
@@ -565,8 +680,7 @@ class App(tk.Tk):
 
     def copy_profile(self):
         profile = host_profile(**{key:value.get() for key,value in self.host_rights.items()})
-        self.clipboard_clear()
-        self.clipboard_append(profile)
+        copy_text_to_clipboard(self, profile)
         self.show_log()
         self.write(profile + 'Профиль скопирован, но ещё НЕ применён. Внеси значения в Sunshine на хосте.')
 
