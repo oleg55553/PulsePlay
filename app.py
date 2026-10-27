@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.11 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.11'
+"""PulsePlay 0.8.12 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.12'
 import os
 import ctypes
 from pathlib import Path
@@ -617,8 +617,66 @@ class App(tk.Tk):
             messagebox.showerror('Вставить IP', 'Скопируй только IP или имя игрового ПК, без другого текста.')
 
     def paste_invite(self):
+        dialog = tk.Toplevel(self)
+        dialog.title('Подключение по приглашению')
+        dialog.geometry('650x470')
+        dialog.minsize(570, 420)
+        dialog.transient(self)
+        dialog.configure(bg='#0b1020')
+
+        body = ttk.Frame(dialog, padding=24, style='Page.TFrame')
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='Вставь приглашение от хоста',
+                  font=('Segoe UI', 20, 'bold'), style='TLabel').pack(anchor='w')
+        ttk.Label(body, text='На компьютере хоста PulsePlay → «Мой компьютер» → '
+                  '«Скопировать приглашение для гостя». Попроси прислать тебе весь скопированный текст.',
+                  wraplength=590, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 14))
+        ttk.Label(body, text='Приглашение PulsePlay начинается с PP1:',
+                  foreground='#83e4b1', font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 6))
+        invite_box = tk.Text(body, height=5, wrap='word', undo=True,
+                             bg='#0e1626', fg='#f3f6fd', insertbackground='#83e4b1',
+                             selectbackground='#34445f', relief='flat',
+                             highlightthickness=1, highlightbackground='#2b3a53',
+                             highlightcolor='#83e4b1', font=('Segoe UI', 11),
+                             padx=12, pady=10)
+        invite_box.pack(fill='both', expand=True)
+        invite_status = tk.StringVar(value='Нажми сюда и вставь текст клавишами Ctrl+V.')
+        ttk.Label(body, textvariable=invite_status, style='Muted.TLabel',
+                  wraplength=590).pack(anchor='w', pady=(8, 10))
+
         try:
-            host, app = parse_invite(read_clipboard_text(self))
+            clipboard_text = read_clipboard_text(self).strip()
+        except tk.TclError:
+            clipboard_text = ''
+        if clipboard_text.startswith('PP1:'):
+            invite_box.insert('1.0', clipboard_text)
+            invite_status.set('Приглашение уже скопировано — проверь текст и нажми «Продолжить».')
+        invite_box.focus_set()
+        invite_box.mark_set('insert', 'end-1c')
+
+        def paste_from_clipboard():
+            try:
+                value = read_clipboard_text(dialog).strip()
+            except tk.TclError:
+                value = ''
+            invite_box.delete('1.0', 'end')
+            if value:
+                invite_box.insert('1.0', value)
+            if value.startswith('PP1:'):
+                invite_status.set('Приглашение вставлено. Нажми «Продолжить».')
+            else:
+                invite_status.set('Не нашёл код приглашения. Попроси хоста скопировать и прислать текст, начинающийся с PP1:.')
+                invite_box.focus_set()
+
+        def continue_with_invite(event=None):
+            raw_invite = invite_box.get('1.0', 'end').strip()
+            try:
+                host, app = parse_invite(raw_invite)
+            except ValueError as exc:
+                invite_status.set(str(exc) + ' Проверь, что вставлен весь текст приглашения от хоста.')
+                invite_box.focus_set()
+                return 'break'
+
             self.vars['host'].set(host)
             self.vars['app'].set(app)
             moonlight_path = self.vars['moonlight'].get().strip()
@@ -627,13 +685,26 @@ class App(tk.Tk):
                 self.vars['moonlight'].set(moonlight_path)
             self.settings.update(host=host, app=app, moonlight=moonlight_path)
             save_settings(self.settings)
+            dialog.grab_release()
+            dialog.destroy()
             if moonlight_path:
                 self.status.set('Приглашение заполнено • Moonlight найден • нажми «Сопряжение · PIN»')
             else:
                 self.status.set('Приглашение заполнено • открываю настройку Moonlight')
                 self.after(100, self.show_setup_wizard)
-        except (tk.TclError, ValueError) as exc:
-            messagebox.showerror('Приглашение', str(exc))
+            return 'break'
+
+        buttons = ttk.Frame(body, style='Page.TFrame')
+        buttons.pack(fill='x', pady=(4, 0))
+        ttk.Button(buttons, text='Вставить из буфера',
+                   command=paste_from_clipboard).pack(side='left')
+        ttk.Button(buttons, text='Отмена', command=dialog.destroy).pack(side='right')
+        ttk.Button(buttons, text='Продолжить', style='Accent.TButton',
+                   command=continue_with_invite).pack(side='right', padx=(0, 8))
+        dialog.bind('<Control-Return>', continue_with_invite)
+        dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
+        dialog.grab_set()
+        dialog.focus_force()
 
     def copy_invite(self):
         try:
