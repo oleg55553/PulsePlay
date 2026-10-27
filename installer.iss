@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.1"
+#define AppVersion "0.8.2"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 
@@ -21,6 +21,9 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 CloseApplications=yes
 RestartApplications=no
+Uninstallable=yes
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -30,6 +33,18 @@ Name: "desktopicon"; Description: "Создать значок на рабоче
 
 [Files]
 Source: "dist\PulsePlay.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Remove source files if an older ZIP was unpacked into this install folder.
+; User settings are stored outside {app} and are preserved.
+[InstallDelete]
+Type: files; Name: "{app}\app.py"
+Type: files; Name: "{app}\core.py"
+Type: files; Name: "{app}\help_ui.py"
+Type: files; Name: "{app}\network.py"
+Type: files; Name: "{app}\launch.pyw"
+Type: files; Name: "{app}\Start.bat"
+Type: files; Name: "{app}\START.cmd"
+Type: files; Name: "{app}\ЗАПУСТИТЬ.cmd"
 
 [Icons]
 Name: "{group}\PulsePlay"; Filename: "{app}\{#AppExeName}"
