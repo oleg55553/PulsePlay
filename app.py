@@ -199,6 +199,7 @@ class App(tk.Tk):
         self.page_title.pack(anchor='w',pady=(8,4))
         self.page_subtitle=tk.Label(hero,text='Подключись к игровому ПК — настройка займёт всего пару минут.',bg='#141f31',fg='#a8b6cb',font=('Segoe UI',11))
         self.page_subtitle.pack(anchor='w')
+        self.setup_connection_wait_card(root)
         self.setup_pairing_card(root)
         self.setup_address(root)
         book = ttk.Notebook(root)
@@ -527,6 +528,35 @@ class App(tk.Tk):
         self.pairing_cancel_button.pack(side='right')
         card.pack_forget()
 
+    def setup_connection_wait_card(self, parent):
+        """Show a clear in-app wait mode with a direct cancel/disconnect button."""
+        card = ttk.Frame(parent, padding=16, style='Page.TFrame')
+        self.connection_wait_card = card
+        ttk.Label(card, text='ПОДКЛЮЧЕНИЕ • РЕЖИМ ОЖИДАНИЯ',
+                  foreground='#83e4b1', font=('Segoe UI', 11, 'bold')).pack(anchor='w')
+        self.connection_wait_text = tk.StringVar(value='')
+        ttk.Label(card, textvariable=self.connection_wait_text, wraplength=760,
+                  justify='left').pack(anchor='w', pady=(6, 10))
+        ttk.Button(card, text='Отключиться', style='Accent.TButton',
+                   command=self.cancel_connection).pack(anchor='w')
+        card.pack_forget()
+
+    def show_connection_wait(self, message):
+        self.connection_wait_text.set(message)
+        if not self.connection_wait_card.winfo_manager():
+            self.connection_wait_card.pack(fill='x', pady=(0, 14), before=self.pairing_card)
+        self.navigate(0)
+        self.viewport.yview_moveto(0)
+
+    def cancel_connection(self):
+        self.auto_play_after_pairing = False
+        if self.pairing_context:
+            self.cancel_pairing()
+        elif self.process is not None and self.process.poll() is None:
+            self.stop()
+        self.connection_wait_card.pack_forget()
+        self.status.set('Подключение отменено.')
+
     def show_pairing_card(self, host, pin):
         """Show the PIN and its timer in the main window, not a floating dialog."""
         clipboard_status = 'PIN скопирован автоматически.'
@@ -613,6 +643,7 @@ class App(tk.Tk):
                 self.pairing_instructions.configure(text='Сопряжение готово. PIN сохранён в Moonlight; нажми «Играть».')
             context['cancel_button'].configure(text='Скрыть код', command=self.hide_pairing_card)
             if auto_play:
+                self.show_connection_wait('Хост подтвердил PIN. Запускаю трансляцию; для отмены нажми «Отключиться».')
                 self.after(500, self.play)
         elif time.monotonic() < context['deadline']:
             self.play_button.configure(state='disabled')
@@ -1241,6 +1272,8 @@ class App(tk.Tk):
         self.pair_button.configure(state='disabled')
         self.stop_button.configure(state='normal')
         process=self.process
+        if kind == 'игровой сеанс':
+            self.show_connection_wait('Подключаюсь к игровому компьютеру. Если нужно остановить ожидание или сеанс, нажми «Отключиться».')
         def reader():
             # Stream output without touching Tk from the worker thread.
             for line in iter(process.stdout.readline,b''):
@@ -1264,6 +1297,8 @@ class App(tk.Tk):
             self.launch(['pair',host,'--pin',pin],'сопряжение')
             self.status.set('Ожидаю подтверждение PIN на игровом компьютере')
             self.show_pairing_card(host, pin)
+            if self.auto_play_after_pairing:
+                self.show_connection_wait('Первое подключение: ожидаю, пока хост подтвердит PIN в Sunshine. Чтобы отменить ожидание, нажми «Отключиться».')
         except (ValueError,OSError) as exc:
             self.pairing_context = None
             self.auto_play_after_pairing = False
@@ -1328,6 +1363,8 @@ class App(tk.Tk):
                     self.show_log()
                 self.write(f'{label} ({self.process_kind}), код {value}.')
                 self.process=None
+                if finished_kind == 'игровой сеанс':
+                    self.connection_wait_card.pack_forget()
                 self.play_button.configure(state='normal')
                 self.pair_button.configure(state='normal')
                 self.stop_button.configure(state='disabled')
