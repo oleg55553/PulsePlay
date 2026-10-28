@@ -12,6 +12,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python files
-        run: python -m compileall -q app.py audio_control.py core.py help_ui.py launch.pyw network.py
+        run: python -m compileall -q app.py audio_control.py core.py help_ui.py launch.pyw network.py sunshine_api.py
       - name: Run unit tests
         run: python -m unittest -v

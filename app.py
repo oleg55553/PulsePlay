@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.21 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.21'
+"""PulsePlay 0.8.22 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.22'
 import os
 import ctypes
 from pathlib import Path
@@ -16,6 +16,7 @@ import webbrowser
 from help_ui import help_label
 from network import diagnose, host_profile, own_address, radmin_vpn_address
 from core import PRESETS, find_moonlight, find_sunshine, load_settings, save_settings, stream_args, validate_host, make_invite, parse_invite
+from sunshine_api import pending_pairings, approve_pairing
 
 
 def copy_text_to_clipboard(widget, text):
@@ -140,6 +141,9 @@ class App(tk.Tk):
         self.stopping = False
         self.pairing_context = None
         self.auto_play_after_pairing = False
+        self.host_pair_monitoring = False
+        self.host_pair_busy = False
+        self.host_pairings = []
         self.program_scan_started = False
         self.settings = load_settings()
         style = ttk.Style(self)
@@ -331,8 +335,51 @@ class App(tk.Tk):
         ttk.Label(host, text='Приглашение содержит адрес и название приложения. Это не пароль.\n'
                   'Гость вставляет его на вкладке «Подключиться», затем проходит PIN-сопряжение.',
                   wraplength=720).pack(anchor='w', pady=(0,10))
-        ttk.Button(host,text='Дополнительные настройки Sunshine',
-                   command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w',pady=15)
+        ttk.Separator(host).pack(fill='x', pady=(14, 12))
+        ttk.Label(host, text='Подтверждение гостя в PulsePlay',
+                  font=('Segoe UI', 13, 'bold'), foreground='#83e4b1').pack(anchor='w')
+        ttk.Label(host, text='Введи логин и пароль Sunshine один раз на время ожидания. Когда гость запросит PIN, он появится здесь. Веб-страницу открывать не нужно.',
+                  wraplength=720, justify='left').pack(anchor='w', pady=(4, 8))
+        credentials = ttk.Frame(host)
+        credentials.pack(fill='x', pady=(0, 8))
+        self.sunshine_user = tk.StringVar()
+        self.sunshine_password = tk.StringVar()
+        ttk.Label(credentials, text='Логин Sunshine').grid(row=0, column=0, sticky='w')
+        ttk.Entry(credentials, textvariable=self.sunshine_user, width=24).grid(row=1, column=0, sticky='ew', padx=(0, 8))
+        ttk.Label(credentials, text='Пароль Sunshine').grid(row=0, column=1, sticky='w')
+        ttk.Entry(credentials, textvariable=self.sunshine_password, show='●', width=24).grid(row=1, column=1, sticky='ew', padx=(0, 8))
+        self.host_pair_toggle = ttk.Button(credentials, text='Начать ожидание гостей', command=self.toggle_host_pair_monitor)
+        self.host_pair_toggle.grid(row=1, column=2, sticky='ew')
+        credentials.columnconfigure(0, weight=1)
+        credentials.columnconfigure(1, weight=1)
+        self.host_pair_status = tk.StringVar(value='Ожидание выключено. Данные входа остаются только в памяти PulsePlay.')
+        ttk.Label(host, textvariable=self.host_pair_status, wraplength=720,
+                  foreground='#9daac2').pack(anchor='w', pady=(0, 6))
+        pair_list_frame = ttk.Frame(host)
+        pair_list_frame.pack(fill='x')
+        self.host_pair_list = tk.Listbox(pair_list_frame, height=4, bg='#0e1626', fg='#edf2fc',
+                                          selectbackground='#31533f', relief='flat',
+                                          highlightthickness=1, highlightbackground='#2b3a53',
+                                          font=('Segoe UI', 10), activestyle='none')
+        self.host_pair_list.pack(side='left', fill='x', expand=True)
+        pair_scroll = ttk.Scrollbar(pair_list_frame, orient='vertical', command=self.host_pair_list.yview)
+        pair_scroll.pack(side='right', fill='y')
+        self.host_pair_list.configure(yscrollcommand=pair_scroll.set)
+        pin_controls = ttk.Frame(host)
+        pin_controls.pack(fill='x', pady=(8, 0))
+        ttk.Label(pin_controls, text='PIN, который показан гостю').grid(row=0, column=0, sticky='w')
+        self.host_pair_pin = tk.StringVar()
+        ttk.Entry(pin_controls, textvariable=self.host_pair_pin, width=12, font=('Consolas', 13, 'bold')).grid(row=1, column=0, sticky='w', padx=(0, 10))
+        ttk.Label(pin_controls, text='Имя устройства').grid(row=0, column=1, sticky='w')
+        self.host_pair_name = tk.StringVar(value='PulsePlay')
+        ttk.Entry(pin_controls, textvariable=self.host_pair_name, width=26).grid(row=1, column=1, sticky='ew', padx=(0, 10))
+        self.host_pair_approve = ttk.Button(pin_controls, text='Подтвердить гостя', style='Accent.TButton', command=self.approve_host_pair)
+        self.host_pair_approve.grid(row=1, column=2, sticky='ew')
+        pin_controls.columnconfigure(1, weight=1)
+        ttk.Label(host, text='Выбери запрос в списке, введи 4 цифры с экрана гостя и нажми «Подтвердить гостя».',
+                  wraplength=720, foreground='#9daac2').pack(anchor='w', pady=(5, 10))
+        ttk.Label(host, text='Для подтверждения гостей веб-панель Sunshine не открывается. Она может понадобиться только для первоначальной настройки самой Sunshine.',
+                  wraplength=720, foreground='#9daac2').pack(anchor='w', pady=(2, 8))
         links=ttk.Frame(host)
         links.pack(anchor='w')
         ttk.Button(links,text='Скачать Sunshine',command=lambda:webbrowser.open('https://github.com/LizardByte/Sunshine/releases')).pack(side='left')
@@ -1150,6 +1197,56 @@ class App(tk.Tk):
         except tk.TclError:
             self.address_status.set('Не удалось скопировать. Выдели адрес в поле и нажми Ctrl+C.')
 
+    def toggle_host_pair_monitor(self):
+        if self.host_pair_monitoring:
+            self.host_pair_monitoring = False
+            self.host_pair_toggle.configure(text='Начать ожидание гостей')
+            self.sunshine_password.set('')
+            self.host_pair_status.set('Ожидание остановлено.')
+            return
+        if not self.sunshine_user.get().strip() or not self.sunshine_password.get():
+            messagebox.showinfo('Вход Sunshine', 'Введи логин и пароль учётной записи Sunshine. Они нужны только для подтверждения гостя и не сохраняются в настройках PulsePlay.')
+            return
+        self.host_pair_monitoring = True
+        self.host_pair_toggle.configure(text='Остановить ожидание')
+        self.host_pair_status.set('Подключаюсь к Sunshine на этом компьютере…')
+        self.refresh_host_pairings()
+
+    def refresh_host_pairings(self):
+        if not self.host_pair_monitoring or self.host_pair_busy:
+            return
+        username, password = self.sunshine_user.get().strip(), self.sunshine_password.get()
+        self.host_pair_busy = True
+
+        def worker():
+            try:
+                self.events.put(('host_pairings', (pending_pairings(username, password), None)))
+            except Exception as exc:
+                self.events.put(('host_pairings', (None, str(exc))))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def approve_host_pair(self):
+        selected = self.host_pair_list.curselection()
+        if not selected or selected[0] >= len(self.host_pairings):
+            messagebox.showinfo('Подтверждение гостя', 'Сначала выбери ожидающего гостя в списке.')
+            return
+        username, password = self.sunshine_user.get().strip(), self.sunshine_password.get()
+        pairing_id = self.host_pairings[selected[0]].get('id')
+        pin = self.host_pair_pin.get().strip()
+        name = self.host_pair_name.get().strip()
+        self.host_pair_approve.configure(state='disabled')
+        self.host_pair_status.set('Передаю PIN в Sunshine и жду завершения сопряжения…')
+
+        def worker():
+            try:
+                success = approve_pairing(username, password, pairing_id, pin, name)
+                self.events.put(('host_pair_approved', (success, None)))
+            except Exception as exc:
+                self.events.put(('host_pair_approved', (False, str(exc))))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def setup_internet(self, frame):
         text = ('Прямое подключение через интернет — без VPN и сервера PulsePlay\n\n'
                 '1. На игровом ПК запусти Sunshine. В его панели открой Network\n'
@@ -1349,6 +1446,49 @@ class App(tk.Tk):
                 self.own_ip.set(address)
                 self.copy_ip_button.configure(state='normal' if address else 'disabled')
                 self.address_status.set(error or 'На игровом ПК скопируй IP. Для подключения нужны открытые порты и PIN Sunshine.')
+            elif kind == 'host_pairings':
+                pairings, error = value
+                self.host_pair_busy = False
+                if error:
+                    self.host_pair_status.set(error)
+                    if any(word in error.lower() for word in ('логин', 'пароль', 'http 401', 'http 403', 'версии sunshine', 'формат ответа', 'не вернула список')):
+                        self.host_pair_monitoring = False
+                        self.host_pair_toggle.configure(text='Начать ожидание гостей')
+                        self.sunshine_password.set('')
+                    self.host_pairings = []
+                    self.host_pair_list.delete(0, 'end')
+                else:
+                    previous = self.host_pair_list.curselection()
+                    selected_id = self.host_pairings[previous[0]].get('id') if previous and previous[0] < len(self.host_pairings) else None
+                    self.host_pairings = pairings
+                    self.host_pair_list.delete(0, 'end')
+                    selected_index = None
+                    for index, item in enumerate(pairings):
+                        name = str(item.get('name') or 'Гость')[:80]
+                        address = str(item.get('address') or 'адрес неизвестен')[:80]
+                        self.host_pair_list.insert('end', f'{name}  •  {address}')
+                        if item.get('id') == selected_id:
+                            selected_index = index
+                    if selected_index is not None:
+                        self.host_pair_list.selection_set(selected_index)
+                    if pairings:
+                        self.host_pair_status.set(f'Ожидают подтверждения: {len(pairings)}. Выбери гостя, введи его PIN и подтверди.')
+                    else:
+                        self.host_pair_status.set('Ожидаю запрос гостя… Оставь PulsePlay открытой на этом экране.')
+                if self.host_pair_monitoring:
+                    self.after(2500, self.refresh_host_pairings)
+            elif kind == 'host_pair_approved':
+                success, error = value
+                self.host_pair_approve.configure(state='normal')
+                if error:
+                    self.host_pair_status.set(error)
+                elif success:
+                    self.host_pair_pin.set('')
+                    self.host_pair_status.set('Гость подтверждён и сопряжён. Теперь он может нажать «Играть» в PulsePlay.')
+                    if self.host_pair_monitoring:
+                        self.after(250, self.refresh_host_pairings)
+                else:
+                    self.host_pair_status.set('Sunshine не подтвердила гостя. Проверь PIN и повтори попытку, пока запрос виден в списке.')
             elif kind=='diagnostic':
                 self.show_log()
                 self.write(value)
