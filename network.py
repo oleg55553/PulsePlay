@@ -1,6 +1,9 @@
 """Direct Sunshine/Moonlight diagnostics without a relay service."""
 import ipaddress
+import os
+import re
 import socket
+import subprocess
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -9,6 +12,36 @@ from core import validate_host
 
 TCP_PORTS = (47984, 47989, 48010)
 UDP_PORTS = (47998, 47999, 48000, 48002, 48010)
+
+
+def radmin_vpn_address():
+    """Return the IPv4 address of the Radmin VPN adapter on Windows, if present."""
+    if os.name != 'nt':
+        return ''
+    try:
+        result = subprocess.run(['ipconfig'], stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            encoding='mbcs', errors='replace', timeout=5, shell=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+    return _radmin_ip_from_ipconfig(result.stdout)
+
+
+def _radmin_ip_from_ipconfig(output):
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        if not re.search(r'Radmin\s+VPN', line, re.IGNORECASE):
+            continue
+        for adapter_line in lines[index + 1:index + 12]:
+            match = re.search(r'IPv4[^:\r\n]*:\s*([0-9.]+)', adapter_line, re.IGNORECASE)
+            if match:
+                try:
+                    address = ipaddress.IPv4Address(match.group(1))
+                    if not address.is_unspecified and not address.is_loopback:
+                        return str(address)
+                except ipaddress.AddressValueError:
+                    pass
+    return ''
 WAN_SERVICES = (
     'urn:schemas-upnp-org:service:WANIPConnection:1',
     'urn:schemas-upnp-org:service:WANPPPConnection:1',

@@ -1,10 +1,22 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from network import _router_url, diagnose, host_profile, is_public_ipv4, own_address
+from network import _radmin_ip_from_ipconfig, _router_url, diagnose, host_profile, is_public_ipv4, own_address
 
 
 class NetworkTests(unittest.TestCase):
+    def test_radmin_adapter_ip_is_detected_without_selecting_other_adapters(self):
+        output = ('Windows IP Configuration\n\n'
+                  'Ethernet adapter Radmin VPN:\n\n'
+                  '   IPv4 Address. . . . . . . . . . . : 26.219.93.9\n'
+                  '   Subnet Mask . . . . . . . . . . : 255.0.0.0\n\n'
+                  'Ethernet adapter Ethernet:\n'
+                  '   IPv4 Address. . . . . . . . . . . : 192.168.0.8\n')
+        self.assertEqual(_radmin_ip_from_ipconfig(output), '26.219.93.9')
+
+    def test_radmin_adapter_without_ipv4_is_not_detected(self):
+        self.assertEqual(_radmin_ip_from_ipconfig('Ethernet adapter Radmin VPN:\n Media disconnected'), '')
+
     def test_public_address_classification(self):
         self.assertTrue(is_public_ipv4('8.8.8.8'))
         for value in ('100.64.1.2', '192.168.1.2', '127.0.0.1', '2001:db8::1', 'bad'):
