@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.16 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.16'
+"""PulsePlay 0.8.17 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.17'
 import os
 import ctypes
 from pathlib import Path
@@ -176,7 +176,7 @@ class App(tk.Tk):
         tk.Label(sidebar, text='PULSEPLAY', bg='#101827', fg='#f3f6fd', font=('Segoe UI',13,'bold')).pack(anchor='w',padx=24)
         tk.Label(sidebar, text='ИГРАЙТЕ ВМЕСТЕ', bg='#101827', fg='#8494ae', font=('Segoe UI',8,'bold')).pack(anchor='w',padx=24,pady=(6,36))
         self.nav_buttons=[]
-        for index,label in enumerate(['01   Подключиться','02   Мой компьютер','03   Интернет','04   Права хоста']):
+        for index,label in enumerate(['01   Подключиться','02   Трансляция','03   Интернет','04   Права хоста']):
             button=tk.Button(sidebar,text=label,anchor='w',bg='#101827',fg='#9aaac1',activebackground='#1c2b38',activeforeground='#83e4b1',relief='flat',bd=0,font=('Segoe UI',10),padx=16,pady=13,cursor='hand2',command=lambda i=index:self.navigate(i))
             button.pack(fill='x',padx=10,pady=3)
             self.nav_buttons.append(button)
@@ -316,26 +316,30 @@ class App(tk.Tk):
                   'Для скрытия остальных окон нужен отдельный механизм захвата.',
                   foreground='#e6bd8a', wraplength=720).pack(anchor='w', pady=(4,12))
         ttk.Label(host, text='Название приложения в Sunshine (обычно Desktop)').pack(anchor='w')
-        self.host_app = tk.StringVar(value='Desktop')
+        self.host_app = tk.StringVar(value=self.settings.get('host_app', 'Desktop'))
+        self.host_app.trace_add('write', lambda *_: self.persist_settings())
         ttk.Entry(host, textvariable=self.host_app, width=38).pack(anchor='w', pady=6)
         ttk.Label(host, text='Как гость подключится', font=('Segoe UI',12,'bold')).pack(anchor='w', pady=(12,6))
-        self.invite_route = tk.StringVar(value='direct')
+        self.invite_route = tk.StringVar(value=self.settings.get('invite_route', 'direct'))
+        self.invite_route.trace_add('write', lambda *_: self.persist_settings())
         ttk.Radiobutton(host, text='Напрямую: публичный IP роутера',
                         variable=self.invite_route, value='direct').pack(anchor='w')
         ttk.Radiobutton(host, text='Через Radmin VPN: адрес хоста из Radmin VPN',
                         variable=self.invite_route, value='radmin').pack(anchor='w')
         ttk.Label(host, text='Для Radmin VPN установи программу на оба ПК, создай сеть и пригласи гостя.\n'
                   'Скопируй адрес своего ПК из окна Radmin VPN и вставь ниже.').pack(anchor='w', pady=(6,2))
-        self.radmin_ip = tk.StringVar(value='')
+        self.radmin_ip = tk.StringVar(value=self.settings.get('radmin_ip', ''))
+        self.radmin_ip.trace_add('write', lambda *_: self.persist_settings())
         ttk.Entry(host, textvariable=self.radmin_ip, width=38).pack(anchor='w', pady=4)
         ttk.Button(host, text='Открыть сайт Radmin VPN',
                    command=lambda: webbrowser.open('https://www.radmin-vpn.com/')).pack(anchor='w', pady=4)
-        ttk.Button(host, text='Скопировать приглашение для гостя',
-                   command=self.copy_invite).pack(anchor='w', pady=6)
+        ttk.Button(host, text='▶  Начать трансляцию · создать приглашение',
+                   style='Accent.TButton', command=self.copy_invite).pack(anchor='w', pady=(12, 6), fill='x')
         ttk.Label(host, text='Приглашение содержит адрес и название приложения. Это не пароль.\n'
                   'Гость вставляет его на вкладке «Подключиться», затем проходит PIN-сопряжение.',
                   wraplength=720).pack(anchor='w', pady=(0,10))
-        ttk.Button(host,text='Открыть панель Sunshine на этом ПК',command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w',pady=15)
+        ttk.Button(host,text='Настроить Sunshine: игры, экран, качество и PIN',
+                   command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w',pady=15)
         links=ttk.Frame(host)
         links.pack(anchor='w')
         ttk.Button(links,text='Скачать Sunshine',command=lambda:webbrowser.open('https://github.com/LizardByte/Sunshine/releases')).pack(side='left')
@@ -625,9 +629,9 @@ class App(tk.Tk):
 
     def navigate(self, index):
         self.book.select(index)
-        titles=['Играй там, где ты.','Твой ПК. Твои игры.','Ближе, чем кажется.','Контроль у тебя.']
+        titles=['Играй там, где ты.','Настрой трансляцию и пригласи гостя.','Ближе, чем кажется.','Контроль у тебя.']
         subtitles=['Подключись к игровому ПК. Всё остальное подождёт.',
-                    'Подготовь компьютер, который будет запускать игру.',
+                    'Хост управляет запуском, адресом и приглашением из этого раздела.',
                     'Настрой доступ между устройствами и проверь маршрут.',
                     'Подготовь общие ограничения ввода на игровом ПК.']
         self.page_title.configure(text=titles[index])
@@ -766,6 +770,8 @@ class App(tk.Tk):
 
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
+        if hasattr(self, 'host_app'):
+            values.update(host_app=self.host_app.get(), invite_route=self.invite_route.get(), radmin_ip=self.radmin_ip.get())
         values.update(fullscreen=self.fullscreen.get(), low_latency=self.low_latency.get(), overlay=self.overlay.get(), volume=self.volume.get(), last_unmuted_volume=self._volume_before_mute)
         values['setup_wizard_completed'] = bool(self.settings.get('setup_wizard_completed'))
         self.settings.update(values)
