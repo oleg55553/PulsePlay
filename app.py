@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.20 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.20'
+"""PulsePlay 0.8.21 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.21'
 import os
 import ctypes
 from pathlib import Path
@@ -140,6 +140,7 @@ class App(tk.Tk):
         self.stopping = False
         self.pairing_context = None
         self.auto_play_after_pairing = False
+        self.program_scan_started = False
         self.settings = load_settings()
         style = ttk.Style(self)
         style.theme_use('clam')
@@ -223,7 +224,7 @@ class App(tk.Tk):
         advanced.columnconfigure(1, weight=1)
         moonlight_path = self.settings.get('moonlight', '')
         if not Path(moonlight_path).is_file():
-            moonlight_path = find_moonlight()
+            moonlight_path = ''
         self.field(advanced, 'moonlight', 'Moonlight.exe', moonlight_path, 0)
         ttk.Button(advanced, text='Выбрать…', command=self.select_exe).grid(row=0, column=2, padx=(8,0))
         self.advanced = advanced
@@ -347,6 +348,7 @@ class App(tk.Tk):
             self.advanced.grid()
         self.write(f'PulsePlay {APP_VERSION} • Требуются отдельно установленные Moonlight и Sunshine.\nКлиент запускается отдельным окном. Реальная задержка здесь не измерена.')
         self.after(100,self.poll)
+        self.after_idle(self.startup_program_scan)
         self.after(200,self.refresh_address)
         self.after(500,self.maybe_setup_wizard)
         self.protocol('WM_DELETE_WINDOW',self.close)
@@ -354,6 +356,22 @@ class App(tk.Tk):
     def maybe_setup_wizard(self):
         if not self.settings.get('setup_wizard_completed'):
             self.show_setup_wizard()
+
+    def startup_program_scan(self):
+        """Locate optional runtimes after the main window has been drawn."""
+        if self.program_scan_started:
+            return
+        self.program_scan_started = True
+
+        def worker():
+            try:
+                sunshine = find_sunshine()
+                moonlight = find_moonlight()
+                self.events.put(('startup_programs', (sunshine, moonlight, None)))
+            except Exception as exc:
+                self.events.put(('startup_programs', ('', '', str(exc)[:200])))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def show_setup_wizard(self):
         dialog = tk.Toplevel(self)
@@ -381,23 +399,24 @@ class App(tk.Tk):
 
         status = tk.StringVar()
         ttk.Label(body, textvariable=status, wraplength=590, justify='left').pack(anchor='w', pady=14)
+        scan_state = {'sequence': 0}
 
         def refresh():
-            sunshine = find_sunshine()
-            moonlight = find_moonlight()
-            found = sunshine if role.get() == 'host' else moonlight
-            requirement = 'Sunshine' if role.get() == 'host' else 'Moonlight'
-            def describe(name, path):
-                return f'{name}: найдено на этом компьютере.\n  {path}' if path else f'{name}: не найдено.'
-            status.set('PulsePlay проверил установленные программы на этом ПК. Искать их в интернете вручную не нужно.\n\n' +
-                       describe('Sunshine', sunshine) + '\n' + describe('Moonlight', moonlight) +
-                       ('\n\nКнопка ниже установит или переустановит выбранную среду через Winget.' if shutil.which('winget') else
-                        '\n\nWinget не найден. Кнопка ниже откроет официальный источник загрузки выбранной среды.'))
-            install_button.configure(state='normal',
-                                     text=f'Установить / переустановить {requirement}')
-            host_help.pack_forget()
-            if role.get() == 'host':
-                host_help.pack(anchor='w', pady=(6, 0))
+            scan_state['sequence'] += 1
+            sequence = scan_state['sequence']
+            role_value = role.get()
+            status.set('Интерфейс готов. Проверяю Sunshine и Moonlight в фоне…')
+            install_button.configure(state='disabled', text='Идёт проверка…')
+
+            def worker():
+                try:
+                    result = (find_sunshine(), find_moonlight(), None)
+                except Exception as exc:
+                    result = ('', '', str(exc)[:200])
+                self.events.put(('wizard_programs',
+                    (dialog, scan_state, sequence, role_value, result, status, install_button, host_help)))
+
+            threading.Thread(target=worker, daemon=True).start()
 
         def install():
             if not shutil.which('winget'):
@@ -435,9 +454,9 @@ class App(tk.Tk):
                               '«Мой компьютер», создай учётную запись и добавь Desktop. '
                               'Затем подключи гостевой ПК по PIN.', wraplength=590, justify='left')
         dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
-        refresh()
         dialog.grab_set()
         dialog.focus_set()
+        refresh()
 
     def help_check(self, parent, text, key, variable):
         row = ttk.Frame(parent)
@@ -971,13 +990,9 @@ class App(tk.Tk):
                 invite_text = make_invite(address, self.host_app.get()) if address else ''
                 ttk.Label(content, text='Текст приглашения (если копирование не сработает — выдели текст и нажми Ctrl+C):',
                           wraplength=620, justify='left').pack(anchor='w', pady=(16, 4))
-                invite_field = tk.Entry(content, relief='flat', bg='#0e1626', fg='#f3f6fd',
-                    insertbackground='#83e4b1', selectbackground='#34445f',
-                    highlightthickness=1, highlightbackground='#2b3a53',
-                    highlightcolor='#83e4b1', font=('Consolas', 10))
-                invite_field.pack(fill='x', pady=(0, 4), ipady=8)
-                invite_field.insert(0, invite_text)
-                invite_field.configure(state='readonly')
+                invite_field_text = tk.StringVar(value=invite_text)
+                ttk.Entry(content, textvariable=invite_field_text, state='readonly',
+                          font=('Consolas', 10)).pack(fill='x', pady=(0, 4), ipady=7)
                 ttk.Label(content, text='Можно нажать на поле, затем Ctrl+A и Ctrl+C.',
                           foreground='#9aaac1').pack(anchor='w')
                 next_button.configure(text='Скопировать приглашение', state='normal' if address else 'disabled')
@@ -1338,6 +1353,37 @@ class App(tk.Tk):
                 self.show_log()
                 self.write(value)
                 self.diagnostic_button.configure(state='normal')
+            elif kind == 'startup_programs':
+                sunshine, moonlight, error = value
+                if moonlight and not Path(self.vars['moonlight'].get().strip()).is_file():
+                    self.vars['moonlight'].set(moonlight)
+                if error:
+                    self.write('Фоновая проверка программ: ' + error)
+                else:
+                    self.write('Фоновая проверка завершена: ' +
+                        ('Sunshine найдена' if sunshine else 'Sunshine не найдена') + ', ' +
+                        ('Moonlight найден' if moonlight else 'Moonlight не найден') + '.')
+            elif kind == 'wizard_programs':
+                (wizard_dialog, scan_state, sequence, role_value, result,
+                 status, install_button, host_help) = value
+                if not wizard_dialog.winfo_exists() or sequence != scan_state['sequence']:
+                    continue
+                sunshine, moonlight, error = result
+                if error:
+                    status.set('Не удалось проверить установленные программы: ' + error)
+                    install_button.configure(state='normal', text='Повторить проверку')
+                    continue
+                requirement = 'Sunshine' if role_value == 'host' else 'Moonlight'
+                def describe(name, path):
+                    return f'{name}: найдено на этом компьютере.\n  {path}' if path else f'{name}: не найдено.'
+                status.set('PulsePlay проверила установленные программы. Искать их в интернете вручную не нужно.\n\n' +
+                    describe('Sunshine', sunshine) + '\n' + describe('Moonlight', moonlight) +
+                    ('\n\nКнопка ниже установит или переустановит выбранную среду через Winget.' if shutil.which('winget') else
+                     '\n\nWinget не найден. Кнопка ниже откроет официальный источник загрузки выбранной среды.'))
+                install_button.configure(state='normal', text=f'Установить / переустановить {requirement}')
+                host_help.pack_forget()
+                if role_value == 'host':
+                    host_help.pack(anchor='w', pady=(6, 0))
             elif kind == 'invite_host_checked':
                 paired, invite_dialog = value
                 if not invite_dialog.winfo_exists():
