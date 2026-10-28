@@ -23,6 +23,9 @@ def _request(path, username, password, method='GET', payload=None, timeout=35):
                  **({'Content-Type': 'application/json'} if body is not None else {})})
     try:
         with urllib.request.urlopen(request, context=ssl._create_unverified_context(), timeout=timeout) as response:
+            content_type = response.headers.get('Content-Type', '')
+            if response.geturl().rstrip('/').endswith('/welcome') or 'application/json' not in content_type.lower():
+                raise ValueError('Sunshine ещё не настроена. Один раз заверши её первоначальную настройку, затем PIN гостей можно будет подтверждать здесь.')
             result = json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):

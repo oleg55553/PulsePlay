@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.22 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.22'
+"""PulsePlay 0.8.23 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.23'
 import os
 import ctypes
 from pathlib import Path
@@ -1451,7 +1451,7 @@ class App(tk.Tk):
                 self.host_pair_busy = False
                 if error:
                     self.host_pair_status.set(error)
-                    if any(word in error.lower() for word in ('логин', 'пароль', 'http 401', 'http 403', 'версии sunshine', 'формат ответа', 'не вернула список')):
+                    if any(word in error.lower() for word in ('логин', 'пароль', 'http 401', 'http 403', 'версии sunshine', 'формат ответа', 'не вернула список', 'не настроена')):
                         self.host_pair_monitoring = False
                         self.host_pair_toggle.configure(text='Начать ожидание гостей')
                         self.sunshine_password.set('')
