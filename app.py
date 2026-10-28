@@ -791,7 +791,8 @@ class App(tk.Tk):
                 title.configure(text='2. Выбери, что увидит гость')
                 subtitle.configure(text='Выбери весь рабочий стол или укажи название приложения, добавленного в Sunshine.')
                 ttk.Radiobutton(content, text='Весь экран компьютера (Desktop)',
-                                variable=self.host_scope, value='desktop').pack(anchor='w', pady=5)
+                                variable=self.host_scope, value='desktop',
+                                command=lambda: self.host_app.set('Desktop')).pack(anchor='w', pady=5)
                 ttk.Radiobutton(content, text='Приложение из Sunshine',
                                 variable=self.host_scope, value='application').pack(anchor='w', pady=5)
                 ttk.Label(content, text='Название приложения в Sunshine',
