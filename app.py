@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.19 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.19'
+"""PulsePlay 0.8.20 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.20'
 import os
 import ctypes
 from pathlib import Path
@@ -139,6 +139,7 @@ class App(tk.Tk):
         self.process_kind = ''
         self.stopping = False
         self.pairing_context = None
+        self.auto_play_after_pairing = False
         self.settings = load_settings()
         style = ttk.Style(self)
         style.theme_use('clam')
@@ -558,6 +559,7 @@ class App(tk.Tk):
         if remaining:
             self.after(1000, self.update_pairing_countdown)
         else:
+            self.auto_play_after_pairing = False
             context['countdown'].set('Время истекло. Создай новый PIN кнопкой «Сопряжение · PIN».')
             context['cancel_button'].configure(text='Скрыть код', command=self.hide_pairing_card)
             self.pairing_context = None
@@ -568,6 +570,7 @@ class App(tk.Tk):
                 self.stop()
 
     def cancel_pairing(self):
+        self.auto_play_after_pairing = False
         context, self.pairing_context = self.pairing_context, None
         if self.process is not None and self.process_kind == 'сопряжение':
             self.stop()
@@ -598,10 +601,19 @@ class App(tk.Tk):
             return
         if result == 0 and verified:
             self.pairing_context = None
-            self.status.set('Сопряжение подтверждено • теперь нажми «Играть»')
-            context['countdown'].set('Готово! Хост подтвердил подключение. Теперь нажми «Играть».')
-            self.pairing_instructions.configure(text='Сопряжение готово. PIN сохранён в Moonlight; нажми «Играть».')
+            auto_play = self.auto_play_after_pairing
+            self.auto_play_after_pairing = False
+            if auto_play:
+                self.status.set('Хост подтвердил подключение • запускаю трансляцию…')
+                context['countdown'].set('Готово! Хост подтвердил подключение. Запускаю трансляцию…')
+                self.pairing_instructions.configure(text='Сопряжение завершено. PulsePlay автоматически запускает трансляцию.')
+            else:
+                self.status.set('Сопряжение подтверждено • теперь нажми «Играть»')
+                context['countdown'].set('Готово! Хост подтвердил подключение. Теперь нажми «Играть».')
+                self.pairing_instructions.configure(text='Сопряжение готово. PIN сохранён в Moonlight; нажми «Играть».')
             context['cancel_button'].configure(text='Скрыть код', command=self.hide_pairing_card)
+            if auto_play:
+                self.after(500, self.play)
         elif time.monotonic() < context['deadline']:
             self.play_button.configure(state='disabled')
             self.pair_button.configure(state='disabled')
@@ -706,8 +718,8 @@ class App(tk.Tk):
         body.pack(fill='both', expand=True)
         ttk.Label(body, text='Вставь приглашение от хоста',
                   font=('Segoe UI', 20, 'bold'), style='TLabel').pack(anchor='w')
-        ttk.Label(body, text='На компьютере хоста PulsePlay → «Мой компьютер» → '
-                  '«Скопировать приглашение для гостя». Попроси прислать тебе весь скопированный текст.',
+        ttk.Label(body, text='Вставь весь текст, который прислал хост. После нажатия PulsePlay сама подключится. '
+                  'При первом подключении попроси хоста подтвердить PIN — трансляция запустится сразу после подтверждения.',
                   wraplength=590, justify='left', style='Muted.TLabel').pack(anchor='w', pady=(8, 14))
         ttk.Label(body, text='Приглашение PulsePlay начинается с PP1:',
                   foreground='#83e4b1', font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 6))
@@ -728,7 +740,7 @@ class App(tk.Tk):
             clipboard_text = ''
         if clipboard_text.startswith('PP1:'):
             invite_box.insert('1.0', clipboard_text)
-            invite_status.set('Приглашение уже скопировано — проверь текст и нажми «Продолжить».')
+            invite_status.set('Приглашение уже вставлено. Нажми «Подключить и играть».')
         invite_box.focus_set()
         invite_box.mark_set('insert', 'end-1c')
 
@@ -741,7 +753,7 @@ class App(tk.Tk):
             if value:
                 invite_box.insert('1.0', value)
             if value.startswith('PP1:'):
-                invite_status.set('Приглашение вставлено. Нажми «Продолжить».')
+                invite_status.set('Приглашение вставлено. Нажми «Подключить и играть».')
             else:
                 invite_status.set('Не нашёл код приглашения. Попроси хоста скопировать и прислать текст, начинающийся с PP1:.')
                 invite_box.focus_set()
@@ -763,12 +775,29 @@ class App(tk.Tk):
                 self.vars['moonlight'].set(moonlight_path)
             self.settings.update(host=host, app=app, moonlight=moonlight_path)
             save_settings(self.settings)
-            dialog.destroy()
-            if moonlight_path:
-                self.status.set('Приглашение заполнено • Moonlight найден • нажми «Сопряжение · PIN»')
-            else:
+            if not moonlight_path:
+                dialog.destroy()
                 self.status.set('Приглашение заполнено • открываю настройку Moonlight')
                 self.after(100, self.show_setup_wizard)
+                return 'break'
+
+            invite_status.set('Проверяю подключение. Если этот компьютер ещё не сопряжён, покажу PIN для хоста…')
+            continue_button.configure(state='disabled')
+            executable = moonlight_path
+
+            def check_existing_pairing():
+                try:
+                    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                    result = subprocess.run([executable, 'list', host],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, timeout=20,
+                        creationflags=flags, shell=False)
+                    paired = result.returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    paired = False
+                self.events.put(('invite_host_checked', (paired, dialog)))
+
+            threading.Thread(target=check_existing_pairing, daemon=True).start()
             return 'break'
 
         buttons = ttk.Frame(body, style='Page.TFrame')
@@ -776,8 +805,9 @@ class App(tk.Tk):
         ttk.Button(buttons, text='Вставить из буфера',
                    command=paste_from_clipboard).pack(side='left')
         ttk.Button(buttons, text='Отмена', command=dialog.destroy).pack(side='right')
-        ttk.Button(buttons, text='Продолжить', style='Accent.TButton',
-                   command=continue_with_invite).pack(side='right', padx=(0, 8))
+        continue_button = ttk.Button(buttons, text='Подключить и играть', style='Accent.TButton',
+                   command=continue_with_invite)
+        continue_button.pack(side='right', padx=(0, 8))
         dialog.bind('<Control-Return>', continue_with_invite)
         dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
         dialog.focus_force()
@@ -785,8 +815,8 @@ class App(tk.Tk):
     def show_host_wizard(self):
         dialog = tk.Toplevel(self)
         dialog.title('Настройка трансляции · PulsePlay')
-        dialog.geometry('700x590')
-        dialog.minsize(620, 520)
+        dialog.geometry('760x700')
+        dialog.minsize(680, 620)
         dialog.transient(self)
         dialog.configure(bg='#0b1020')
 
@@ -848,23 +878,53 @@ class App(tk.Tk):
                         self.radmin_ip.set(found_ip)
                 title.configure(text='3. Выбери путь подключения')
                 subtitle.configure(text='Для разных городов нужен доступ через интернет или общую VPN-сеть. Выбери удобный путь.')
-                ttk.Radiobutton(content, text='Через Radmin VPN (оба компьютера должны быть в одной VPN-сети)',
-                                variable=self.invite_route, value='radmin', wraplength=600).pack(anchor='w', pady=5)
-                ttk.Label(content, text='IP этого компьютера в сети Radmin VPN', foreground='#9aaac1').pack(anchor='w', padx=(24, 0), pady=(2, 3))
-                ttk.Entry(content, textvariable=self.radmin_ip).pack(fill='x', padx=(24, 0))
-                radmin_buttons = ttk.Frame(content, style='Page.TFrame')
-                radmin_buttons.pack(anchor='w', pady=(6, 0))
-                ttk.Button(radmin_buttons, text='Найти IP Radmin на этом ПК', command=self.detect_radmin_ip).pack(side='left')
-                ttk.Button(radmin_buttons, text='Открыть Radmin VPN', command=self.open_radmin_vpn).pack(side='left', padx=(8, 0))
-                ttk.Label(content, text='В Radmin создай сеть, а гость пусть подключится к ней по названию и паролю. Когда оба ПК появятся в сети, PulsePlay найдёт VPN-IP и подготовит приглашение. Не отправляй пароль сети в приглашении.',
-                          wraplength=620, justify='left').pack(anchor='w', pady=(10, 0))
-                ttk.Label(content, text='Если провайдер использует CGNAT, прямое подключение не сработает: используй VPN или запроси публичный IPv4.',
-                          foreground='#e6bd8a', wraplength=620, justify='left').pack(anchor='w', pady=(14, 0))
-                ttk.Radiobutton(content, text='Другой вариант: напрямую через интернет (публичный IP и UPnP)',
-                                variable=self.invite_route, value='direct', wraplength=600).pack(anchor='w', pady=(14, 5))
-                ttk.Label(content, text='Публичный IP роутера: ' + (self.own_ip.get() or 'ещё не получен'),
-                          foreground='#83e4b1' if self.own_ip.get() else '#9aaac1').pack(anchor='w', padx=(24, 0), pady=(0, 5))
-                ttk.Button(content, text='Найти публичный IP через UPnP', command=self.refresh_address).pack(anchor='w', padx=(24, 0), pady=(0, 12))
+                # Use explicit Tk colors here: some Windows themes rendered the
+                # ttk controls invisible inside this dark wizard page.
+                route_card = tk.Frame(content, bg='#141d2d', padx=14, pady=10,
+                                      highlightbackground='#2b3a53', highlightthickness=1)
+                route_card.pack(fill='x', anchor='n', pady=(2, 8))
+                tk.Radiobutton(route_card,
+                    text='Рекомендуется: через Radmin VPN', variable=self.invite_route,
+                    value='radmin', bg='#141d2d', fg='#edf2fc', activebackground='#141d2d',
+                    activeforeground='#83e4b1', selectcolor='#0e1626', font=('Segoe UI', 11, 'bold'),
+                    wraplength=590, justify='left').pack(anchor='w')
+                tk.Label(route_card,
+                    text='Подходит для разных городов. Оба компьютера должны быть в одной сети Radmin VPN.',
+                    bg='#141d2d', fg='#9aaac1', wraplength=590, justify='left').pack(anchor='w', padx=(26, 0), pady=(2, 5))
+                tk.Label(route_card, text='IP этого компьютера в Radmin VPN', bg='#141d2d', fg='#dce5f4').pack(anchor='w', padx=(26, 0), pady=(4, 2))
+                radmin_entry = tk.Entry(route_card, textvariable=self.radmin_ip,
+                    bg='#0e1626', fg='#f3f6fd', insertbackground='#83e4b1',
+                    selectbackground='#34445f', relief='flat', highlightthickness=1,
+                    highlightbackground='#2b3a53', highlightcolor='#83e4b1')
+                radmin_entry.pack(fill='x', padx=(26, 0), ipady=7)
+                radmin_buttons = tk.Frame(route_card, bg='#141d2d')
+                radmin_buttons.pack(anchor='w', padx=(26, 0), pady=(7, 2))
+                tk.Button(radmin_buttons, text='Найти IP на этом ПК', command=self.detect_radmin_ip,
+                    bg='#25334b', fg='#e1e9f7', activebackground='#34445f', activeforeground='#fff',
+                    relief='flat', padx=12, pady=6).pack(side='left')
+                tk.Button(radmin_buttons, text='Открыть Radmin VPN', command=self.open_radmin_vpn,
+                    bg='#25334b', fg='#e1e9f7', activebackground='#34445f', activeforeground='#fff',
+                    relief='flat', padx=12, pady=6).pack(side='left', padx=(8, 0))
+                tk.Label(route_card,
+                    text='Создай сеть в Radmin, а гостю отдельно передай её название и пароль. Когда оба ПК подключатся, PulsePlay найдёт VPN-IP и подготовит приглашение. Пароль VPN не отправляй в приглашении.',
+                    bg='#141d2d', fg='#dce5f4', wraplength=590, justify='left').pack(anchor='w', padx=(26, 0), pady=(7, 0))
+                direct_card = tk.Frame(content, bg='#141d2d', padx=14, pady=9,
+                                       highlightbackground='#2b3a53', highlightthickness=1)
+                direct_card.pack(fill='x', anchor='n', pady=(4, 0))
+                tk.Radiobutton(direct_card,
+                    text='Другой вариант: напрямую через интернет', variable=self.invite_route,
+                    value='direct', bg='#141d2d', fg='#edf2fc', activebackground='#141d2d',
+                    activeforeground='#83e4b1', selectcolor='#0e1626', font=('Segoe UI', 10, 'bold'),
+                    wraplength=590, justify='left').pack(anchor='w')
+                tk.Label(direct_card,
+                    text='Нужен публичный IP и настроенный роутер. При CGNAT этот способ не сработает.',
+                    bg='#141d2d', fg='#e6bd8a', wraplength=590, justify='left').pack(anchor='w', padx=(26, 0), pady=(2, 5))
+                public_ip = self.own_ip.get() or 'ещё не получен'
+                tk.Label(direct_card, text='Публичный IP роутера: ' + public_ip,
+                    bg='#141d2d', fg='#83e4b1' if self.own_ip.get() else '#9aaac1').pack(anchor='w', padx=(26, 0), pady=(2, 4))
+                tk.Button(direct_card, text='Найти публичный IP через UPnP', command=self.refresh_address,
+                    bg='#25334b', fg='#e1e9f7', activebackground='#34445f', activeforeground='#fff',
+                    relief='flat', padx=12, pady=6).pack(anchor='w', padx=(26, 0))
                 next_button.configure(text='Далее  →', state='normal')
             else:
                 title.configure(text='4. Пригласи гостя')
@@ -877,6 +937,18 @@ class App(tk.Tk):
                           wraplength=620, justify='left').pack(anchor='w', pady=(0, 14))
                 ttk.Label(content, text='Не сообщай PIN посторонним: он подтверждает подключение к твоему компьютеру.',
                           foreground='#e6bd8a', wraplength=620, justify='left').pack(anchor='w')
+                invite_text = make_invite(address, self.host_app.get()) if address else ''
+                ttk.Label(content, text='Текст приглашения (если копирование не сработает — выдели текст и нажми Ctrl+C):',
+                          wraplength=620, justify='left').pack(anchor='w', pady=(16, 4))
+                invite_field = tk.Entry(content, relief='flat', bg='#0e1626', fg='#f3f6fd',
+                    insertbackground='#83e4b1', selectbackground='#34445f',
+                    highlightthickness=1, highlightbackground='#2b3a53',
+                    highlightcolor='#83e4b1', font=('Consolas', 10))
+                invite_field.pack(fill='x', pady=(0, 4), ipady=8)
+                invite_field.insert(0, invite_text)
+                invite_field.configure(state='readonly')
+                ttk.Label(content, text='Можно нажать на поле, затем Ctrl+A и Ctrl+C.',
+                          foreground='#9aaac1').pack(anchor='w')
                 next_button.configure(text='Скопировать приглашение', state='normal' if address else 'disabled')
             next_button.configure(command=advance)
             back_button.configure(command=go_back)
@@ -918,6 +990,22 @@ class App(tk.Tk):
             self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
             return True
         except (ValueError, tk.TclError) as exc:
+            # Some Windows clipboard managers temporarily block the native
+            # clipboard API. Try Tk's clipboard implementation before failing;
+            # the wizard also keeps a selectable invitation as a manual fallback.
+            try:
+                if self.invite_route.get() == 'radmin':
+                    address = self.radmin_ip.get()
+                else:
+                    address = self.own_ip.get()
+                invite = make_invite(address, self.host_app.get())
+                self.clipboard_clear()
+                self.clipboard_append(invite)
+                self.update_idletasks()
+                self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
+                return True
+            except (ValueError, tk.TclError):
+                pass
             messagebox.showerror('Приглашение', str(exc) or 'Сначала получи публичный IP роутера.')
             return False
 
@@ -1178,6 +1266,7 @@ class App(tk.Tk):
             self.show_pairing_card(host, pin)
         except (ValueError,OSError) as exc:
             self.pairing_context = None
+            self.auto_play_after_pairing = False
             messagebox.showerror('Сопряжение',str(exc))
 
     def play(self):
@@ -1214,6 +1303,18 @@ class App(tk.Tk):
                 self.show_log()
                 self.write(value)
                 self.diagnostic_button.configure(state='normal')
+            elif kind == 'invite_host_checked':
+                paired, invite_dialog = value
+                if not invite_dialog.winfo_exists():
+                    continue
+                invite_dialog.destroy()
+                if paired:
+                    self.status.set('Этот компьютер уже сопряжён с хостом • запускаю трансляцию…')
+                    self.play()
+                else:
+                    self.auto_play_after_pairing = True
+                    self.status.set('Нужно один раз подтвердить подключение на хосте • создаю PIN…')
+                    self.pair()
             elif kind=='pairing_verified':
                 self.finish_pairing(0 if value else 1, verified=bool(value))
             elif kind=='log':
