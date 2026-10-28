@@ -1,5 +1,5 @@
-"""PulsePlay 0.8.17 — desktop launcher for separately installed Moonlight/Sunshine."""
-APP_VERSION = '0.8.17'
+"""PulsePlay 0.8.18 — desktop launcher for separately installed Moonlight/Sunshine."""
+APP_VERSION = '0.8.18'
 import os
 import ctypes
 from pathlib import Path
@@ -293,20 +293,10 @@ class App(tk.Tk):
         self.stop_button = ttk.Button(buttons, text='Отключиться', command=self.stop, state='disabled')
         self.stop_button.pack(side='right')
         client.columnconfigure(1,weight=1)
-        ttk.Label(host, text='Компьютер, на котором запущена игра', font=('Segoe UI',16,'bold')).pack(anchor='w',pady=(0,12))
-        steps = ('1. Установи Sunshine на игровой ПК и запусти его.\n\n'
-                 '2. Открой настройки, создай учётную запись и добавь игры.\n'
-                 '    Для NVIDIA проверь аппаратный кодировщик NVENC.\n\n'
-                 '3. На втором устройстве нажми «Сопряжение». Введи показанный\n'
-                 '    PIN в разделе PIN панели Sunshine на игровом ПК.\n\n'
-                 '4. Для интернета включи UPnP в Sunshine и в роутере.\n'
-                 '    Если UPnP недоступен, открой порты вручную (вкладка «Интернет»).\n'
-                 '    При CGNAT нужен публичный IP от провайдера.\n\n'
-                 'Доступ сохраняется после сопряжения. Удаляй ненужные устройства\n'
-                 'в Sunshine. Для прекращения всех подключений останови Sunshine\n'
-                 'на игровом ПК. Закрытие PulsePlay на хосте поток не останавливает.')
-        ttk.Label(host,text=steps,justify='left',wraplength=720).pack(anchor='w')
-        ttk.Label(host, text='Что увидит гость', font=('Segoe UI',12,'bold')).pack(anchor='w', pady=(18,6))
+        ttk.Label(host, text='Настрой хост и подготовь подключение гостя прямо здесь.',
+                  font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(0, 8))
+        ttk.Label(host, text='Мастер проверит Sunshine, поможет выбрать экран или игру, настроить маршрут и создать приглашение.',
+                  wraplength=720).pack(anchor='w', pady=(0, 12))
         self.host_scope = tk.StringVar(value='desktop')
         ttk.Radiobutton(host, text='Весь экран компьютера', variable=self.host_scope,
                         value='desktop').pack(anchor='w')
@@ -333,12 +323,12 @@ class App(tk.Tk):
         ttk.Entry(host, textvariable=self.radmin_ip, width=38).pack(anchor='w', pady=4)
         ttk.Button(host, text='Открыть сайт Radmin VPN',
                    command=lambda: webbrowser.open('https://www.radmin-vpn.com/')).pack(anchor='w', pady=4)
-        ttk.Button(host, text='▶  Начать трансляцию · создать приглашение',
-                   style='Accent.TButton', command=self.copy_invite).pack(anchor='w', pady=(12, 6), fill='x')
+        ttk.Button(host, text='▶  Настроить трансляцию шаг за шагом',
+                   style='Accent.TButton', command=self.show_host_wizard).pack(anchor='w', pady=(12, 6), fill='x')
         ttk.Label(host, text='Приглашение содержит адрес и название приложения. Это не пароль.\n'
                   'Гость вставляет его на вкладке «Подключиться», затем проходит PIN-сопряжение.',
                   wraplength=720).pack(anchor='w', pady=(0,10))
-        ttk.Button(host,text='Настроить Sunshine: игры, экран, качество и PIN',
+        ttk.Button(host,text='Дополнительные настройки Sunshine',
                    command=lambda: webbrowser.open('https://localhost:47990')).pack(anchor='w',pady=15)
         links=ttk.Frame(host)
         links.pack(anchor='w')
@@ -752,6 +742,116 @@ class App(tk.Tk):
         dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
         dialog.focus_force()
 
+    def show_host_wizard(self):
+        dialog = tk.Toplevel(self)
+        dialog.title('Настройка трансляции · PulsePlay')
+        dialog.geometry('700x590')
+        dialog.minsize(620, 520)
+        dialog.transient(self)
+        dialog.configure(bg='#0b1020')
+
+        body = ttk.Frame(dialog, padding=26, style='Page.TFrame')
+        body.pack(fill='both', expand=True)
+        title = ttk.Label(body, text='', font=('Segoe UI', 21, 'bold'))
+        title.pack(anchor='w')
+        subtitle = ttk.Label(body, text='', wraplength=630, justify='left')
+        subtitle.pack(anchor='w', pady=(6, 16))
+        content = ttk.Frame(body, style='Page.TFrame')
+        content.pack(fill='both', expand=True)
+        footer = ttk.Frame(body, style='Page.TFrame')
+        footer.pack(fill='x', pady=(16, 0))
+        step_label = ttk.Label(footer, text='', foreground='#9aaac1')
+        step_label.pack(side='left')
+        next_button = ttk.Button(footer, text='Далее  →', style='Accent.TButton')
+        next_button.pack(side='right')
+        back_button = ttk.Button(footer, text='←  Назад')
+        back_button.pack(side='right', padx=(0, 8))
+        step = {'value': 0}
+
+        def render():
+            for widget in content.winfo_children():
+                widget.destroy()
+            current = step['value']
+            step_label.configure(text=f'Шаг {current + 1} из 4')
+            back_button.configure(state='normal' if current else 'disabled')
+            if current == 0:
+                title.configure(text='1. Проверим игровой компьютер')
+                subtitle.configure(text='На этом ПК должна быть установлена и запущена Sunshine — она передаёт экран, звук и управление гостю.')
+                installed = bool(find_sunshine())
+                ttk.Label(content, text=('✓ Sunshine найдена на этом компьютере.' if installed else
+                          'Sunshine пока не найдена. Установи её через мастер первого запуска PulsePlay.'),
+                          foreground='#83e4b1' if installed else '#e6bd8a',
+                          font=('Segoe UI', 12, 'bold'), wraplength=620).pack(anchor='w', pady=(8, 14))
+                ttk.Button(content, text='Проверить ещё раз', command=render).pack(anchor='w')
+                if not installed:
+                    ttk.Button(content, text='Открыть мастер установки сред',
+                               command=self.show_setup_wizard).pack(anchor='w', pady=(8, 0))
+                next_button.configure(text='Далее  →', state='normal' if installed else 'disabled')
+            elif current == 1:
+                title.configure(text='2. Выбери, что увидит гость')
+                subtitle.configure(text='Выбери весь рабочий стол или укажи название приложения, добавленного в Sunshine.')
+                ttk.Radiobutton(content, text='Весь экран компьютера (Desktop)',
+                                variable=self.host_scope, value='desktop').pack(anchor='w', pady=5)
+                ttk.Radiobutton(content, text='Приложение из Sunshine',
+                                variable=self.host_scope, value='application').pack(anchor='w', pady=5)
+                ttk.Label(content, text='Название приложения в Sunshine',
+                          foreground='#9aaac1').pack(anchor='w', pady=(14, 3))
+                ttk.Entry(content, textvariable=self.host_app).pack(fill='x')
+                ttk.Label(content, text='Ограничение: Sunshine всё равно захватывает дисплей целиком. Выбор приложения запускает игру, но не скрывает остальные окна.',
+                          foreground='#e6bd8a', wraplength=620, justify='left').pack(anchor='w', pady=(12, 0))
+                next_button.configure(text='Далее  →', state='normal')
+            elif current == 2:
+                title.configure(text='3. Выбери путь подключения')
+                subtitle.configure(text='Для разных городов нужен доступ через интернет или общую VPN-сеть. Выбери удобный путь.')
+                ttk.Radiobutton(content, text='Напрямую через интернет (публичный IP и UPnP/проброс портов)',
+                                variable=self.invite_route, value='direct', wraplength=600).pack(anchor='w', pady=6)
+                ttk.Label(content, text='Публичный IP роутера: ' + (self.own_ip.get() or 'ещё не получен'),
+                          foreground='#83e4b1' if self.own_ip.get() else '#9aaac1').pack(anchor='w', padx=(24, 0), pady=(0, 5))
+                ttk.Button(content, text='Найти публичный IP через UPnP', command=self.refresh_address).pack(anchor='w', padx=(24, 0), pady=(0, 12))
+                ttk.Radiobutton(content, text='Через Radmin VPN (оба компьютера должны быть в одной VPN-сети)',
+                                variable=self.invite_route, value='radmin', wraplength=600).pack(anchor='w', pady=5)
+                ttk.Label(content, text='Radmin VPN IP этого компьютера', foreground='#9aaac1').pack(anchor='w', padx=(24, 0), pady=(2, 3))
+                ttk.Entry(content, textvariable=self.radmin_ip).pack(fill='x', padx=(24, 0))
+                ttk.Label(content, text='Если провайдер использует CGNAT, прямое подключение не сработает: используй VPN или запроси публичный IPv4.',
+                          foreground='#e6bd8a', wraplength=620, justify='left').pack(anchor='w', pady=(14, 0))
+                next_button.configure(text='Далее  →', state='normal')
+            else:
+                title.configure(text='4. Пригласи гостя')
+                subtitle.configure(text='Скопируй приглашение и передай его гостю. Оно заполнит адрес и название приложения в PulsePlay на его компьютере.')
+                address = self.radmin_ip.get().strip() if self.invite_route.get() == 'radmin' else self.own_ip.get().strip()
+                ttk.Label(content, text='Адрес для приглашения: ' + (address or 'не задан'),
+                          foreground='#83e4b1' if address else '#e6bd8a',
+                          font=('Segoe UI', 12, 'bold'), wraplength=620).pack(anchor='w', pady=(4, 12))
+                ttk.Label(content, text='После подключения гость запросит сопряжение. На хосте открой Sunshine → PIN, выбери ожидающее устройство, введи показанный PIN и нажми Send. Это нужно сделать один раз для каждого гостя.',
+                          wraplength=620, justify='left').pack(anchor='w', pady=(0, 14))
+                ttk.Label(content, text='Не сообщай PIN посторонним: он подтверждает подключение к твоему компьютеру.',
+                          foreground='#e6bd8a', wraplength=620, justify='left').pack(anchor='w')
+                next_button.configure(text='Скопировать приглашение', state='normal' if address else 'disabled')
+            next_button.configure(command=advance)
+            back_button.configure(command=go_back)
+
+        def go_back():
+            step['value'] = max(0, step['value'] - 1)
+            render()
+
+        def advance():
+            if step['value'] < 3:
+                if step['value'] == 1 and self.host_scope.get() == 'application' and not self.host_app.get().strip():
+                    messagebox.showwarning('Приложение Sunshine', 'Укажи название приложения, которое уже добавлено в Sunshine.', parent=dialog)
+                    return
+                step['value'] += 1
+                render()
+                return
+            if self.copy_invite():
+                next_button.configure(text='Готово ✓', state='disabled')
+                step_label.configure(text='Приглашение скопировано')
+                self.status.set('Хост настроен • приглашение скопировано • ожидай гостя и подтверди его PIN в Sunshine')
+
+        self.own_ip.trace_add('write', lambda *_: render() if step['value'] == 2 else None)
+        render()
+        dialog.bind('<Return>', lambda _event: advance())
+        dialog.focus_force()
+
     def copy_invite(self):
         try:
             if self.invite_route.get() == 'radmin':
@@ -765,8 +865,10 @@ class App(tk.Tk):
             invite = make_invite(address, self.host_app.get())
             copy_text_to_clipboard(self, invite)
             self.address_status.set('Приглашение скопировано. Передай его гостю и подтверди PIN в Sunshine.')
+            return True
         except (ValueError, tk.TclError) as exc:
             messagebox.showerror('Приглашение', str(exc) or 'Сначала получи публичный IP роутера.')
+            return False
 
     def persist_settings(self):
         values = {key:var.get() for key,var in self.vars.items()}
