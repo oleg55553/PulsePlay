@@ -1,9 +1,7 @@
 # PulsePlay
 
-[**⬇ Скачать установщик для Windows**](https://github.com/oleg55553/PulsePlay/releases/download/latest/PulsePlay-Setup.exe) · [Описание выпуска](https://github.com/oleg55553/PulsePlay/releases/tag/latest)
-
-PulsePlay is a Windows app with its own host and guest streaming system. It does
-not launch Sunshine or Moonlight.
+PulsePlay is being rebuilt as a Windows app with its own host and guest stream.
+The new alpha does not launch Sunshine or Moonlight.
 
 ## Current alpha scope
 
@@ -13,12 +11,11 @@ not launch Sunshine or Moonlight.
   volume/mute, and keyboard/mouse input.
 - One guest at a time. No relay server or account service.
 
-This is version 0.9.0-alpha1. Local connection, screen video, and audio output
-have been checked. A connection between two separate computers still needs
+This is an early prototype, not a replacement release yet. Selected-window
+capture and input routing use Windows Graphics Capture and still need real-device
 verification. Gamepad forwarding, hardware video encoding, reconnection, and
-network adaptation are still outstanding. Do not send an invite to someone you
-do not trust: the invite grants control of the host keyboard and mouse until
-streaming stops.
+network adaptation are still outstanding. Do not send an invite to someone you do not trust:
+the invite grants control of the host keyboard and mouse until streaming stops.
 
 ## Connecting two computers
 
@@ -43,6 +40,6 @@ Inno Setup 6. The GitHub Actions Windows workflow uses the same dependency list.
 
 ## Release status
 
-The Windows installer is available from the download link at the top of this
-page. Both computers need PulsePlay and Radmin VPN connected to the same Radmin
-network. Remote play between separate computers has not yet been verified.
+The currently published legacy installer still requires Sunshine and Moonlight.
+The built-in streaming engine must pass build and real-device checks before a
+new installer is published as a replacement.
