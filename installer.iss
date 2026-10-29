@@ -1,5 +1,5 @@
 #define AppName "PulsePlay"
-#define AppVersion "0.8.23"
+#define AppVersion "0.9.0-alpha1"
 #define AppPublisher "PulsePlay"
 #define AppExeName "PulsePlay.exe"
 
@@ -33,7 +33,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать значок на рабочем столе"; GroupDescription: "Дополнительные значки:"; Flags: unchecked
 
 [Files]
-Source: "dist\PulsePlay.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\PulsePlay\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Clean loose files left by the earlier source-archive version if it was
 ; unpacked into this install folder. User settings live outside {app}.

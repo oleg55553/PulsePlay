@@ -19,8 +19,8 @@ jobs:
       - name: Build standalone PulsePlay executable
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check pyinstaller==6.16.0 pycaw==20260927
-          python -m PyInstaller --clean --noconfirm --onefile --windowed --collect-all pycaw --collect-all comtypes --name PulsePlay app.py
+          python -m pip install --disable-pip-version-check -r requirements-streaming.txt pyinstaller==6.16.0
+          python -m PyInstaller --clean --noconfirm --onedir --windowed --collect-all aiortc --collect-all av --collect-all dxcam --collect-all soundcard --collect-all windows_capture --name PulsePlay launch.pyw
       - name: Install Inno Setup compiler
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -33,7 +33,7 @@ jobs:
           name: PulsePlay-Windows-Setup
           path: |
             dist/PulsePlay-Setup.exe
-            dist/PulsePlay.exe
+            dist/PulsePlay/PulsePlay.exe
           if-no-files-found: error
           retention-days: 30
       - name: Create rolling Windows release if needed
@@ -43,7 +43,7 @@ jobs:
         run: |
           gh release view latest --json tagName *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create latest --target $env:GITHUB_SHA --title "PulsePlay для Windows" --notes "Установщик Windows x64. Sunshine/Moonlight ставятся отдельно через мастер первого запуска."
+            gh release create latest --target $env:GITHUB_SHA --title "PulsePlay для Windows" --notes "Альфа встроенной трансляции PulsePlay через Radmin VPN."
           }
       - name: Update rolling release tag and assets
         shell: pwsh
@@ -52,4 +52,4 @@ jobs:
         run: |
           git tag --force latest $env:GITHUB_SHA
           git push origin +refs/tags/latest
-          gh release upload latest dist/PulsePlay-Setup.exe dist/PulsePlay.exe --clobber
+          gh release upload latest dist/PulsePlay-Setup.exe --clobber

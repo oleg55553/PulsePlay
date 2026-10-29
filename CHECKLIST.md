@@ -1,109 +1,40 @@
-# Проверка на двух устройствах
+# PulsePlay native-stream release checks
 
-Все проверки реального потока пока НЕ ВЫПОЛНЕНЫ.
+The built-in stream is still alpha. Do not publish it as a stable replacement
+until all required checks below pass on real Windows computers.
 
-## Первый запуск: короткая проверка
+## Build and start
 
-Проводить на игровом ПК (хост) и принимающем ПК (гость). Сначала проверь поток
-в одной домашней сети. Когда он заработает, переходи к Radmin VPN из разных сетей.
-Проверяй по одному изменению за раз, иначе будет сложно понять причину сбоя.
+- [ ] Install the pinned Python version and `requirements-streaming.txt` on a
+  clean Windows x64 runner.
+- [ ] Build `PulsePlay.exe` and `PulsePlay-Setup.exe` with the CI workflow.
+- [ ] Install without Python, Sunshine, or Moonlight on a clean Windows 10/11 PC.
+- [ ] Confirm no setup prompt tries to find/install Sunshine or Moonlight.
 
-1. На хосте запусти Sunshine и PulsePlay; в Sunshine добавь `Desktop`.
-2. На госте открой PulsePlay, укажи адрес хоста в домашней сети и нажми
-   «Сопряжение · PIN». Введи PIN в Sunshine → PIN на хосте.
-3. Нажми «Играть» и проверь картинку, звук, мышь и клавиатуру.
-4. Если локальная сеть прошла проверку, подключи оба ПК к одной сети Radmin VPN.
-   На хосте выбери маршрут Radmin, укажи его VPN-адрес и скопируй приглашение.
-   На госте вставь приглашение; если пара уже сопряжена, запускай поток.
-5. Убедись, что оба ПК остаются в сети Radmin, повтори проверку потока из другого
-   города/интернет-подключения. Запиши результаты в форму ниже.
+## Same Radmin VPN network
 
-### Если изображения нет
+- [ ] Host finds only its Radmin VPN address and starts listening on port 47333.
+- [ ] Guest rejects malformed invites and connects with the full `PP2:` invite.
+- [ ] Invalid/revoked invites are rejected; host accepts one guest at a time.
+- [ ] Firewall prompt allows operation over the VPN interface.
+- [ ] Measure video smoothness, CPU/GPU usage, and interaction delay at 720p/30.
+- [ ] Confirm system sound reaches the guest; test mute and volume at 0/50/100%.
+- [ ] Test keyboard, mouse buttons, movement, and wheel; disconnect releases keys.
+- [ ] Stop host and confirm old invite can no longer connect.
+- [ ] Test two simultaneous guests are handled safely.
+- [ ] Test disconnect during startup, during video, and while audio device changes.
 
-- Убедись, что Radmin VPN показывает гостя и хоста в одной сети.
-- Проверь адрес хоста в приглашении и запущенный Sunshine.
-- На госте открой «Интернет» → «Проверить указанный игровой ПК».
-- Если TCP-порты недоступны, проверь Windows Firewall и правила Sunshine/Radmin.
-- Сначала добейся рабочего потока в домашней сети, затем разбирай Radmin.
+## Privacy and scope
 
-### Если изображения нет звука
+- [ ] Verify whole-desktop and selected-window capture on real Windows builds.
+- [ ] Cover the selected window with unrelated windows and verify they never appear in the guest stream.
+- [ ] Check invite handling/logs do not persist or print the access token.
+- [ ] Review Windows firewall exposure and the UDP ports WebRTC negotiates.
+- [ ] Test from different cities while both computers are in the same Radmin VPN.
+- [ ] Test unsupported / not-installed Radmin cases show a clear explanation.
 
-- В Sunshine → Audio/Video включи `Stream Audio`.
-- Убедись, что на хосте выбран активный аудиовыход; при нескольких устройствах
-  укажи правильный `Audio Sink`.
-- На госте проверь громкость Moonlight и устройство вывода звука Windows.
-- Повтори поток и отметь результат. Обычный ping не проверяет аудио.
+## Still planned
 
-### Краткий отчёт
-
-Скопируй и заполни перед отправкой результатов:
-
-```text
-Этап: домашняя сеть / Radmin VPN
-Хост (Windows, видеокарта):
-Гость (Windows, видеокарта):
-Интернет хоста / гостя: Wi-Fi или Ethernet, скорость если известна
-Адрес Sunshine / имя приложения:
-PIN-сопряжение: прошло / нет
-Видео: работает / нет / прерывается
-Звук: работает / нет / прерывается
-Клавиатура и мышь: работают / нет
-Разрешение / FPS / кодек / битрейт:
-Статистика Moonlight (сеть / декодирование / потеря кадров):
-Ошибка или шаг, на котором остановилось:
-``` 
-
-- [ ] Start.bat открывает окно; подписи и элементы помещаются при масштабировании 100/150%.
-- [ ] Отсутствующий Moonlight показывает понятную ошибку.
-- [ ] Неправильный адрес, FPS, битрейт не запускают процесс.
-- [ ] Правильный PIN сопрягает клиент; неправильный PIN не даёт доступ.
-- [ ] Отмена сопряжения не зависает; повторная попытка доступна.
-- [ ] Desktop запускается с изображением и звуком.
-- [ ] Игра из Sunshine запускается по точному имени с пробелами.
-- [ ] 720p/60, 1080p/60 и поддерживаемый 1080p/120 работают.
-- [ ] Статистика подтверждает аппаратное декодирование и выбранный FPS.
-- [ ] Мышь работает в игре, клавиатура не теряет отпускание клавиш.
-- [ ] Геймпад определяется в игре; два геймпада назначаются разным игрокам.
-- [ ] Неподдерживаемый кодек выдаёт ошибку; H.264 восстанавливает работу.
-- [ ] «Отключиться» закрывает клиент; игра на хосте остаётся запущенной.
-- [ ] Выход из оболочки с активным клиентом отключает его после подтверждения.
-- [ ] Потеря сети отображается Moonlight, можно запустить повторный сеанс.
-- [ ] Отзыв сопряжения в Sunshine запрещает новое подключение клиента.
-- [ ] Остановка Sunshine прерывает действующий сеанс.
-- [ ] Сравнены профили с V-Sync и без него, потери кадров и качество изображения.
-- [ ] Прямое подключение из другой сети работает; записаны задержка и потери.
-
-## Прямое подключение 0.7
-
-- [ ] На игровом ПК Sunshine запущен; UPnP включён в Sunshine и роутере.
-- [ ] PulsePlay показывает публичный IPv4 роутера; копирование даёт только IP.
-- [ ] При недоступном UPnP показана понятная ошибка; WAN IP можно взять в роутере.
-- [ ] Адрес CGNAT/двойного NAT не выдаётся как рабочий публичный IP.
-- [ ] С другой сети TCP 47984, 47989, 48010 доступны.
-- [ ] PIN-сопряжение и поток работают через публичный IP; проверены видео, звук и ввод.
-- [ ] Если UPnP не сработал, проверены ручные TCP/UDP правила из README.
-- [ ] TCP 47990 (панель Sunshine) не открыт в интернет.
-- [ ] После удаления клиента в Sunshine он больше не подключается.
-
-## Приглашение 0.8
-
-- [ ] Хост копирует приглашение с публичным IP и названием приложения.
-- [ ] Гость вставляет приглашение; адрес и игра заполняются автоматически.
-- [ ] Одно приглашение без PIN не даёт доступ.
-- [ ] Режим «только окно» недоступен и не обещает скрыть рабочий стол.
-- [ ] Windows EXE собирается и повторяет эти сценарии без установленного Python.
-
-Для каждого профиля запиши: модели устройств, разрешение/частоту экранов,
-тип сети, кодек, битрейт, сеть/декодирование по статистике Moonlight, потерю кадров.
-Отдельно отметь способ измерения полной задержки. Не подменяй её обычным ping.
-
-## Дополнительно для 0.2
-
-- [ ] Устройства в разных сетях; Tailscale запущен на обоих.
-- [ ] Диагностика показывает прямой маршрут, а не только открытый TCP.
-- [ ] Сопряжение и поток работают через Tailscale IP.
-- [ ] Все права выключены на хосте: мышь/клавиатура/геймпад/касание не управляют ПК.
-- [ ] Только геймпад: работает геймпад, мышь и клавиатура не работают.
-- [ ] Обход через обычный Moonlight не меняет ограничения Sunshine.
-- [ ] Отзыв Share в Tailscale прекращает сетевой доступ через него.
-- [ ] Задержка и потери измерены в игре; результаты записаны отдельно.
+- [ ] Gamepad forwarding and a per-session consent/stop control for the host.
+- [ ] Hardware H.264 encoding and adaptive bitrate / recovery.
+- [ ] Per-monitor capture and display scaling.

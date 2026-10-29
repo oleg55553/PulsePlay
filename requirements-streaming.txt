@@ -1,0 +1,7 @@
+aiortc>=1.11,<2
+av>=14,<18
+dxcam>=0.3,<0.4
+numpy>=1.26,<3
+Pillow>=10,<13
+soundcard>=0.4,<1
+windows-capture>=2.0.1,<3
